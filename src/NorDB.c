@@ -56,6 +56,12 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 		return NULL;
 	DB->DB_ll = hw;
 	DB->Record_Size = RecordSize + sizeof(uint8_t);	/*add one byte crc*/
+	if((DB->Record_Size+sizeof(NorDB_Header_t)+1) > hw->SectorSize)
+	{
+		nordb_free(DB);
+		return NULL;
+	}
+	
 	DB->Header_Size = (((hw->SectorSize - (sizeof(NorDB_Header_t))) / DB->Record_Size) + 1) + sizeof(NorDB_Header_t);
 	DB->Record_NumberInSector = (hw->SectorSize - DB->Header_Size) / DB->Record_Size;
 	DB->Header_Cache = (uint8_t*)nordb_malloc(DB->Header_Size);
