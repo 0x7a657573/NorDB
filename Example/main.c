@@ -1,10 +1,10 @@
 /*
  ============================================================================
- Name        : NorDB.c
+ Name        : main.c
  Author      : Mohammad Mazarei
  Version     :
  Copyright   : Copyright 2020 Mohammad Mazarei This program is free software
- Description : Hello World in C, Ansi-style
+ Description : Test app for NorDB in C, Ansi-style
  ============================================================================
  */
 
