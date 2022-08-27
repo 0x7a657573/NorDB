@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stdio.h>
 
 #define NorDB_Magic	        0x0766
 #define NorDB_RVer	        0x0001
@@ -26,5 +27,12 @@
 #define nordb_memcpy	memcpy
 
 /*file function*/
+#define nordb_FILE  FILE
+#define nordb_fopen(path,mode)          fopen(path,mode)
+#define nordb_fclose(fd)                fclose(fd)
+#define nordb_fseek(fd,offset,whence)   fseek(fd,offset,whence)
+#define nordb_fflush(fd)                fflush(fd)
+#define nordb_fwrite(fd,ptr,size)       fwrite(ptr,size,1,fd)
+#define nordb_fread(fd,ptr,size)        fread(ptr,size,1,fd)
 
 #endif /* NORDB_DEF_H_ */

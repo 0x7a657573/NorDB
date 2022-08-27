@@ -19,6 +19,7 @@ set(LIBRARY_SOURCE
     ${LIBRARY_SOURCE_DIR}/NorDB.c
     ${LIBRARY_SOURCE_DIR}/sem_ll.c
     ${LIBRARY_SOURCE_DIR}/ll/Ram_ll.c
+    ${LIBRARY_SOURCE_DIR}/ll/File_ll.c
 )
 
 project(${PROJECT_NAME} C)
