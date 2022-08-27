@@ -7,8 +7,7 @@
 
 #ifndef RAMDB_RAMDB_H_
 #define RAMDB_RAMDB_H_
-#include <stdint.h>
-#include <stdlib.h>
+
 #include "../NorDB.h"
 
 

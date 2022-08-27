@@ -7,10 +7,6 @@
 
 #ifndef LightDB_LightDB_H_
 #define LightDB_LightDB_H_
-
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdbool.h>
 #include "NorDB_def.h"
 #include "sem_ll.h"
 
