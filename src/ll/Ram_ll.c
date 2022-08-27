@@ -54,7 +54,7 @@ uint8_t RAMll_flashCheck(void*Param)
 
 const char *RAMll_DriverName(void*Param)
 {
-	static const char DName[] = "iRam";
+	static const char DName[] = "RamDB";
 	return DName;
 }
 
