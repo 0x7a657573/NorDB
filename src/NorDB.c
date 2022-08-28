@@ -311,12 +311,14 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
 
 	uint8_t Temp_Buffer[db->Record_Size];
 
-	uint32_t Record = NorDB_GetWriteable_Record(db);
+ 	uint32_t Record = NorDB_GetWriteable_Record(db);
 	if(Record==0)
 	{
 		if(NorDB_EraseAllErasableSector(db)==0)
 		{
 			/*XXX erase oldest data or not ?*/
+			NorDB_sem_Unlock(&hw->sema);
+			return 0;
 		}
 		Record = NorDB_GetWriteable_Record(db);
 		if(Record == 0)
