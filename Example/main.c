@@ -74,7 +74,8 @@ int main(void)
 	NorDB_t *DB_New = NorDB(File_Hw,sizeof(dummy_t));
 	printf("Unread Point is %i\n",NorDB_Get_TotalUnreadRecord(DB_New));
 	printf("Try insert %d another Record\n",NorDB_Get_FreeRecord(DB)/3);
-	for(int i=0;i<NorDB_Get_FreeRecord(DB)/3;i++)
+	uint32_t new = NorDB_Get_FreeRecord(DB)/3;
+	for(int i=0;i<new;i++)
 	{
 		get_RandomRecord(&temp);
 		uint32_t x = NorDB_AddRecord(DB_New, &temp);
@@ -85,7 +86,7 @@ int main(void)
 		}
 	}
 	uint32_t UNreadRecord = NorDB_Get_TotalUnreadRecord(DB);
-	printf("Total Unread Point is %i\n",UNreadRecord/2);
+	printf("Total Unread Point is %i\n",UNreadRecord);
 
 
 	for(int i=0;i<UNreadRecord/2;i++)
