@@ -445,3 +445,20 @@ uint32_t NorDB_Get_TotalUnreadRecord(NorDB_t *db)
 	return unread;
 }
 
+uint32_t NorDB_Get_FreeRecord(NorDB_t *db)
+{
+	if(db==NULL)	return 0;
+
+	NorDB_HWLayer *hw = db->DB_ll;
+
+	/*lock io*/
+	NorDB_sem_Lock(&hw->sema);
+
+	uint32_t TotalRecord = hw->SectorNumber * db->Record_NumberInSector;
+	uint32_t unread = hw->TotalUnreadRecord;
+
+	/*unlock io*/
+	NorDB_sem_Unlock(&hw->sema);
+
+	return TotalRecord - unread;
+}

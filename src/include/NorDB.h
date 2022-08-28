@@ -54,5 +54,6 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize);
 uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData);
 uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData);
 uint32_t NorDB_Get_TotalUnreadRecord(NorDB_t *db);
+uint32_t NorDB_Get_FreeRecord(NorDB_t *db);
 
 #endif /* LightDB_LightDB_H_ */
