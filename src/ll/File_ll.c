@@ -26,6 +26,7 @@ void Filell_Erase(void *Param)
     char tmp = 0xFF;
     for(int i=0;i<ptr->Total_Size;i++)
         nordb_fwrite(ptr->fileid,&tmp,1);
+	nordb_fflush(ptr->fileid);
 }
 
 void Filell_SectorErace(void*Param,uint32_t address)
@@ -42,6 +43,7 @@ void Filell_SectorErace(void*Param,uint32_t address)
         char tmp = 0xFF;
         for(int i=0;i<ptr->Sector_Size;i++)
             nordb_fwrite(ptr->fileid,&tmp,1);
+		nordb_fflush(ptr->fileid);
     }
 }
 
@@ -54,6 +56,7 @@ void Filell_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
         if(nordb_fseek(ptr->fileid, address, SEEK_SET)!=0)
                 return;
         nordb_fwrite(ptr->fileid,data,len);
+		nordb_fflush(ptr->fileid);
 	}
 }
 
