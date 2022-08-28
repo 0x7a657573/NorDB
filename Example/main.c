@@ -14,7 +14,7 @@
 #include <time.h>
 #include <NorDB.h>
 #include <ll/Ram_ll.h>
-
+#include <ll/File_ll.h>
 typedef struct  __attribute__((__packed__))
 {
 	uint8_t  dummy[11];
@@ -43,30 +43,38 @@ bool check_bummyRecord(dummy_t *rec)
 
 int main(void)
 {
-	srand(time(NULL));
-
-	NorDB_HWLayer *RAM_Hw = Ramll_Init(512,2);
-	NorDB_t *DB = NorDB(RAM_Hw,sizeof(dummy_t));
-
 	/*add record to DB*/
 	dummy_t temp;
-	printf("Try insert 29 Record\n");
-	for(int i=0;i<29;i++)
+	srand(time(NULL));
+
+	NorDB_HWLayer *File_Hw = Filell_Init("/home/zeus/w/NorDB/build/Nor.db",512,2);	
+	NorDB_t *DB = NorDB(File_Hw,sizeof(dummy_t));
+
+	uint32_t Unread = NorDB_Get_TotalUnreadRecord(DB);
+	printf("Unread Point is %i\n",Unread);
+	printf("Read %i of record ...\n",Unread/2);
+	for(int i=0;i<Unread/2;i++)
 	{
-		get_RandomRecord(&temp);
-		uint32_t x = NorDB_AddRecord(DB, &temp);
+		uint32_t x = NorDB_ReadRecord(DB, &temp);
 		if(x==0)
 		{
-			printf("Error to add Rec %i\n",i);
+			printf("Error Read Reocrd\n");
+			return 1;
+		}
+
+		if(check_bummyRecord(&temp)==false)
+		{
+			printf("Read Reocrd not Correct!\n");
 			return 1;
 		}
 	}
-
+	printf("Unread Point is %i and %d is free\n",NorDB_Get_TotalUnreadRecord(DB),NorDB_Get_FreeRecord(DB));
+		
 	/*mount another DB to This io layer*/
-	NorDB_t *DB_New = NorDB(RAM_Hw,sizeof(dummy_t));
+	NorDB_t *DB_New = NorDB(File_Hw,sizeof(dummy_t));
 	printf("Unread Point is %i\n",NorDB_Get_TotalUnreadRecord(DB_New));
-	printf("Try insert 29 another Record\n");
-	for(int i=0;i<29;i++)
+	printf("Try insert %d another Record\n",NorDB_Get_FreeRecord(DB)/3);
+	for(int i=0;i<NorDB_Get_FreeRecord(DB)/3;i++)
 	{
 		get_RandomRecord(&temp);
 		uint32_t x = NorDB_AddRecord(DB_New, &temp);
@@ -77,10 +85,10 @@ int main(void)
 		}
 	}
 	uint32_t UNreadRecord = NorDB_Get_TotalUnreadRecord(DB);
-	printf("Total Unread Point is %i\n",UNreadRecord);
+	printf("Total Unread Point is %i\n",UNreadRecord/2);
 
 
-	for(int i=0;i<UNreadRecord;i++)
+	for(int i=0;i<UNreadRecord/2;i++)
 	{
 		uint32_t x = NorDB_ReadRecord(DB_New, &temp);
 		if(x==0)
@@ -97,5 +105,7 @@ int main(void)
 	}
 	printf("We Read Back %d Record Correctly :)\n",UNreadRecord);
 
+
+	Filell_Del(File_Hw);
 	return EXIT_SUCCESS;
 }
