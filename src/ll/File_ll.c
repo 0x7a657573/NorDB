@@ -81,6 +81,31 @@ const char *Filell_DriverName(void*Param)
 	return DName;
 }
 
+bool Filell_CheckFileSize(Filell_t *Filesw)
+{
+    /*set filesize*/
+    if(nordb_fseek(Filesw->fileid, 0L, SEEK_END)!=0)
+    {
+		return false;
+    }
+	// calculating the size of the file
+    uint32_t filesize = nordb_ftell(Filesw->fileid);
+
+	if(nordb_fseek(Filesw->fileid, 0L, SEEK_SET)!=0)
+    {
+		return false;
+    }
+
+	/*check file len*/
+	if(filesize<Filesw->Total_Size)
+	{
+		Filell_Erase(Filesw);
+	}
+
+    nordb_fflush(Filesw->fileid);
+	return true;
+}
+
 NorDB_HWLayer *Filell_Init(char *path,uint16_t SectorSize,uint16_t TotalSector)
 {
     NorDB_HWLayer *Filehw = nordb_malloc(sizeof(NorDB_HWLayer));
@@ -101,18 +126,20 @@ NorDB_HWLayer *Filell_Init(char *path,uint16_t SectorSize,uint16_t TotalSector)
 	Filesw->fileid = nordb_fopen(path,"r+b");
 	if(Filesw->fileid==NULL)
 	{
-		nordb_free(Filesw);
-		nordb_free(Filehw);
-		return NULL;
+		Filesw->fileid = nordb_fopen(path,"w+b");
+		if(Filesw->fileid==NULL)
+		{
+			nordb_free(Filesw);
+			nordb_free(Filehw);
+			return NULL;
+		}
 	}
 
-    /*set filesize*/
-    if(nordb_fseek(Filesw->fileid, total_Size, SEEK_SET)!=0)
+	if(Filell_CheckFileSize(Filesw)==false)
     {
         Filell_Del(Filehw);
 		return NULL;
     }
-    nordb_fflush(Filesw->fileid);
 
 	/*init sema*/
 	if(!NorDB_sem_init(&Filehw->sema))

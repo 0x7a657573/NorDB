@@ -31,6 +31,7 @@
 #define nordb_fopen(path,mode)          fopen(path,mode)
 #define nordb_fclose(fd)                fclose(fd)
 #define nordb_fseek(fd,offset,whence)   fseek(fd,offset,whence)
+#define nordb_ftell(fd)                 ftell(fd)
 #define nordb_fflush(fd)                fflush(fd)
 #define nordb_fwrite(fd,ptr,size)       fwrite(ptr,size,1,fd)
 #define nordb_fread(fd,ptr,size)        fread(ptr,size,1,fd)
