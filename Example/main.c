@@ -47,7 +47,7 @@ int main(void)
 	dummy_t temp;
 	srand(time(NULL));
 
-	NorDB_HWLayer *File_Hw = Filell_Init("/home/zeus/w/NorDB/build/Nor.db",512,2);	
+	NorDB_HWLayer *File_Hw = Filell_Init("Nor.db",512,2);	
 	NorDB_t *DB = NorDB(File_Hw,sizeof(dummy_t));
 
 	uint32_t Unread = NorDB_Get_TotalUnreadRecord(DB);
