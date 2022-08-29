@@ -21,6 +21,29 @@ typedef struct  __attribute__((__packed__))
 	uint32_t checksum;
 }dummy_t;
 
+bool FullFill_Tetst(NorDB_t *DB);
+
+int main(void)
+{
+	/*add record to DB*/
+	dummy_t temp;
+	srand(time(NULL));
+
+	NorDB_HWLayer *File_Hw = Filell_Init("Nor.db",512,4);	
+	NorDB_t *DB = NorDB(File_Hw,sizeof(dummy_t));
+
+	/*fill test*/
+	if(!FullFill_Tetst(DB))
+	{
+		printf("Fill Test Not Complete\n");
+		Filell_Del(File_Hw);
+		return EXIT_FAILURE;
+	}
+
+	Filell_Del(File_Hw);
+	return EXIT_SUCCESS;
+}
+
 void get_RandomRecord(dummy_t *rec)
 {
 	rec->checksum = 0;
@@ -41,72 +64,87 @@ bool check_bummyRecord(dummy_t *rec)
 	return sum==rec->checksum;
 }
 
-int main(void)
+
+bool FullFill_Tetst(NorDB_t *DB)
 {
-	/*add record to DB*/
 	dummy_t temp;
-	srand(time(NULL));
 
-	NorDB_HWLayer *File_Hw = Filell_Init("Nor.db",512,2);	
-	NorDB_t *DB = NorDB(File_Hw,sizeof(dummy_t));
+	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
+	uint32_t Sector_Number = DB->DB_ll->SectorNumber;
+	uint32_t Record_Sector = DB->Record_NumberInSector;
+	uint32_t Total_Capacity = Record_Sector * Sector_Number;
 
-	uint32_t Unread = NorDB_Get_TotalUnreadRecord(DB);
-	printf("Unread Point is %i\n",Unread);
-	printf("Read %i of record ...\n",Unread/2);
-	for(int i=0;i<Unread/2;i++)
+	uint32_t Used_Record = NorDB_Get_TotalUnreadRecord(DB);
+	printf("Test Fill NorDB\n\tSectors:%d\n",Sector_Number);
+	printf("\tRecordPerSector:%d\n",Record_Sector);
+	printf("\tTotal Capacity:%d\n",Total_Capacity);
+
+	if(Used_Record)
 	{
-		uint32_t x = NorDB_ReadRecord(DB, &temp);
-		if(x==0)
+		
+		printf("Have %d record try empty DB\n",Used_Record);
+		uint32_t add_record = Total_Capacity - Used_Record;
+		for(int i=0;i<add_record;i++)
 		{
-			printf("Error Read Reocrd\n");
-			return 1;
+			/*get random record*/
+			get_RandomRecord(&temp);
+			NorDB_AddRecord(DB, &temp);
 		}
 
-		if(check_bummyRecord(&temp)==false)
+		for(int i=0;i<Total_Capacity;i++)
 		{
-			printf("Read Reocrd not Correct!\n");
-			return 1;
+			NorDB_ReadRecord(DB, &temp);
 		}
 	}
-	printf("Unread Point is %i and %d is free\n",NorDB_Get_TotalUnreadRecord(DB),NorDB_Get_FreeRecord(DB));
-		
-	/*mount another DB to This io layer*/
-	NorDB_t *DB_New = NorDB(File_Hw,sizeof(dummy_t));
-	printf("Unread Point is %i\n",NorDB_Get_TotalUnreadRecord(DB_New));
-	printf("Try insert %d another Record\n",NorDB_Get_FreeRecord(DB)/3);
-	uint32_t new = NorDB_Get_FreeRecord(DB)/3;
-	for(int i=0;i<new;i++)
+
+	/*try fill DB*/
+	uint32_t LastUpdateSector = -1;
+	for(int i=0;i<Total_Capacity;i++)
 	{
+		/*get random record*/
 		get_RandomRecord(&temp);
-		uint32_t x = NorDB_AddRecord(DB_New, &temp);
+		uint32_t x = NorDB_AddRecord(DB, &temp);
 		if(x==0)
 		{
 			printf("Error to add Rec %i\n",i);
-			return 1;
+			return false;
+		}
+
+		uint32_t useSector = (x/Sector_Size);
+		if(LastUpdateSector!=useSector)
+		{
+			printf("Sector %d Fill Completed\n",useSector);
+			LastUpdateSector = useSector;
 		}
 	}
-	uint32_t UNreadRecord = NorDB_Get_TotalUnreadRecord(DB);
-	printf("Total Unread Point is %i\n",UNreadRecord);
+	printf("incert %d Record in DB Completed\n\n",Total_Capacity);
 
-
-	for(int i=0;i<UNreadRecord/2;i++)
+	/*Try ReadBack*/
+	LastUpdateSector = -1;
+	for(int i=0;i<Total_Capacity;i++)
 	{
-		uint32_t x = NorDB_ReadRecord(DB_New, &temp);
+		/*get random record*/
+		uint32_t x = NorDB_ReadRecord(DB, &temp);
 		if(x==0)
 		{
-			printf("Error Read Reocrd\n");
-			return 1;
+			printf("Error to Read Rec %i\n",i);
+			return false;
 		}
 
 		if(check_bummyRecord(&temp)==false)
 		{
 			printf("Read Reocrd not Correct!\n");
-			return 1;
+			return false;
+		}
+
+		uint32_t useSector = (x/Sector_Size);
+		if(LastUpdateSector!=useSector)
+		{
+			printf("Sector %d Read Completed\n",useSector);
+			LastUpdateSector = useSector;
 		}
 	}
-	printf("We Read Back %d Record Correctly :)\n",UNreadRecord);
+	printf("Read Back %d Record Correctly :)\n\n",Total_Capacity);
 
-
-	Filell_Del(File_Hw);
-	return EXIT_SUCCESS;
+	return true;
 }
