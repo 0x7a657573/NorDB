@@ -22,6 +22,7 @@ typedef struct  __attribute__((__packed__))
 }dummy_t;
 
 bool FullFill_Tetst(NorDB_t *DB);
+bool RoundRobin_Test(NorDB_t *DB);
 
 int main(void)
 {
@@ -36,6 +37,14 @@ int main(void)
 	if(!FullFill_Tetst(DB))
 	{
 		printf("Fill Test Not Complete\n");
+		Filell_Del(File_Hw);
+		return EXIT_FAILURE;
+	}
+
+	/*Round Robin test*/
+	if(!RoundRobin_Test(DB))
+	{
+		printf("Round Robin Test Not Complete\n");
 		Filell_Del(File_Hw);
 		return EXIT_FAILURE;
 	}
@@ -145,6 +154,106 @@ bool FullFill_Tetst(NorDB_t *DB)
 		}
 	}
 	printf("Read Back %d Record Correctly :)\n\n",Total_Capacity);
+
+	return true;
+}
+
+
+bool RoundRobin_Test(NorDB_t *DB)
+{
+	dummy_t temp;
+
+	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
+	uint32_t Sector_Number = DB->DB_ll->SectorNumber;
+	uint32_t Record_Sector = DB->Record_NumberInSector;
+	uint32_t Total_Capacity = Record_Sector * Sector_Number;
+
+	uint32_t Used_Record = NorDB_Get_TotalUnreadRecord(DB);
+	printf("Round Robin Test NorDB\n\tSectors:%d\n",Sector_Number);
+	printf("\tRecordPerSector:%d\n",Record_Sector);
+	printf("\tTotal Capacity:%d\n",Total_Capacity);
+
+	/*be sure empty database*/
+	if(Used_Record)
+	{
+		
+		printf("Have %d record try empty DB\n",Used_Record);
+		uint32_t add_record = Total_Capacity - Used_Record;
+		for(int i=0;i<add_record;i++)
+		{
+			/*get random record*/
+			get_RandomRecord(&temp);
+			NorDB_AddRecord(DB, &temp);
+		}
+
+		for(int i=0;i<Total_Capacity;i++)
+		{
+			NorDB_ReadRecord(DB, &temp);
+		}
+	}
+
+	uint32_t lastSectorUse = -1;
+	do
+	{
+		/*try fill OneSector*/
+		uint32_t WriteSector = -1;
+		for(int i=0;i<Record_Sector;i++)
+		{
+			/*get random record*/
+			get_RandomRecord(&temp);
+			uint32_t x = NorDB_AddRecord(DB, &temp);
+			if(x==0)
+			{
+				printf("Error to add Rec %i\n",i);
+				return false;
+			}
+
+			uint32_t useSector = (x/Sector_Size);
+			if(WriteSector!=useSector)
+			{
+				printf("Sector %d Fill Completed\n",useSector);
+				WriteSector = useSector;
+			}
+		}
+
+		/*Try ReadBack*/
+		uint32_t readBack = -1;
+		for(int i=0;i<Record_Sector;i++)
+		{
+			/*get random record*/
+			uint32_t x = NorDB_ReadRecord(DB, &temp);
+			if(x==0)
+			{
+				printf("Error to Read Rec %i\n",i);
+				return false;
+			}
+
+			if(check_bummyRecord(&temp)==false)
+			{
+				printf("Read Reocrd not Correct!\n");
+				return false;
+			}
+
+			uint32_t useSector = (x/Sector_Size);
+			if(readBack!=useSector)
+			{
+				printf("Sector %d Read Completed\n",useSector);
+				readBack = useSector;
+			}
+		}
+
+		if(lastSectorUse==-1)
+			lastSectorUse = WriteSector;
+		else if(lastSectorUse == WriteSector)
+		{
+			printf("Test Faild\n");	
+			return false;
+		}
+		else
+		{
+			break;
+		}
+	} while (1);
 
 	return true;
 }
