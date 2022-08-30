@@ -152,9 +152,9 @@ uint32_t NorDB_GetWriteable_Record(NorDB_t *db)
 
 	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
 	bool CanForamtInUsed = false;
+	uint16_t SearchSector = db->LastWriteSector;
 	for(int i=0;i<2;i++)
 	{
-		uint16_t SearchSector = (db->LastWriteSector) >= db->DB_ll->SectorNumber ? 0:db->LastWriteSector;
 		uint32_t res = NorDB_Find_First_Free_point_in_Sector(db, SearchSector,Header,CanForamtInUsed);
 		if(res!=0)
 		{
@@ -162,7 +162,7 @@ uint32_t NorDB_GetWriteable_Record(NorDB_t *db)
 			return res;
 		}
 		/*we can not found free pos try next sector*/	
-  		db->LastWriteSector++;
+		SearchSector = (++SearchSector) >= db->DB_ll->SectorNumber ? 0:SearchSector;
 		CanForamtInUsed = true;
 	}
 	return 0;
@@ -354,6 +354,8 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
  	uint32_t Record = NorDB_GetWriteable_Record(db);
 	if(Record==0)
 	{
+		/*unlock io*/
+		NorDB_sem_Unlock(&hw->sema);
 		return 0;
 	}
 

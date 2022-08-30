@@ -23,6 +23,7 @@ typedef struct  __attribute__((__packed__))
 
 bool FullFill_Tetst(NorDB_t *DB);
 bool RoundRobin_Test(NorDB_t *DB);
+bool OverWrite_Test(NorDB_t *DB);
 
 int main(void)
 {
@@ -32,6 +33,14 @@ int main(void)
 
 	NorDB_HWLayer *File_Hw = Filell_Init("Nor.db",512,4);	
 	NorDB_t *DB = NorDB(File_Hw,sizeof(dummy_t));
+
+	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
+	uint32_t Sector_Number = DB->DB_ll->SectorNumber;
+	uint32_t Record_Sector = DB->Record_NumberInSector;
+	uint32_t Total_Capacity = Record_Sector * Sector_Number;
+	printf("NorDB Tests\n\tSectors:%d\n",Sector_Number);
+	printf("\tRecordPerSector:%d\n",Record_Sector);
+	printf("\tTotal Capacity:%d\n",Total_Capacity);
 
 	/*fill test*/
 	if(!FullFill_Tetst(DB))
@@ -45,6 +54,14 @@ int main(void)
 	if(!RoundRobin_Test(DB))
 	{
 		printf("Round Robin Test Not Complete\n");
+		Filell_Del(File_Hw);
+		return EXIT_FAILURE;
+	}
+
+	/*OverWrite test*/
+	if(!OverWrite_Test(DB))
+	{
+		printf("Over Write Test Not Complete\n");
 		Filell_Del(File_Hw);
 		return EXIT_FAILURE;
 	}
@@ -84,9 +101,7 @@ bool FullFill_Tetst(NorDB_t *DB)
 	uint32_t Total_Capacity = Record_Sector * Sector_Number;
 
 	uint32_t Used_Record = NorDB_Get_TotalUnreadRecord(DB);
-	printf("Test Fill NorDB\n\tSectors:%d\n",Sector_Number);
-	printf("\tRecordPerSector:%d\n",Record_Sector);
-	printf("\tTotal Capacity:%d\n",Total_Capacity);
+	printf("--->NorDB Full Fill Test\n");
 
 	if(Used_Record)
 	{
@@ -169,14 +184,12 @@ bool RoundRobin_Test(NorDB_t *DB)
 	uint32_t Total_Capacity = Record_Sector * Sector_Number;
 
 	uint32_t Used_Record = NorDB_Get_TotalUnreadRecord(DB);
-	printf("Round Robin Test NorDB\n\tSectors:%d\n",Sector_Number);
-	printf("\tRecordPerSector:%d\n",Record_Sector);
-	printf("\tTotal Capacity:%d\n",Total_Capacity);
+	printf("--->Round Robin Test NorDB\n");
+	
 
 	/*be sure empty database*/
 	if(Used_Record)
 	{
-		
 		printf("Have %d record try empty DB\n",Used_Record);
 		uint32_t add_record = Total_Capacity - Used_Record;
 		for(int i=0;i<add_record;i++)
@@ -246,7 +259,7 @@ bool RoundRobin_Test(NorDB_t *DB)
 			lastSectorUse = WriteSector;
 		else if(lastSectorUse == WriteSector)
 		{
-			printf("Round Robin Test Faild\n");	
+			printf("Round Robin Test Failed\n");	
 			return false;
 		}
 		else
@@ -256,5 +269,96 @@ bool RoundRobin_Test(NorDB_t *DB)
 	} while (1);
 	printf("Round Robin Correctly Work:)\n\n",Total_Capacity);
 
+	return true;
+}
+
+bool OverWrite_Test(NorDB_t *DB)
+{
+	dummy_t temp;
+
+	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
+	uint32_t Sector_Number = DB->DB_ll->SectorNumber;
+	uint32_t Record_Sector = DB->Record_NumberInSector;
+	uint32_t Total_Capacity = Record_Sector * Sector_Number;
+	uint32_t Used_Record = NorDB_Get_TotalUnreadRecord(DB);
+	printf("--->NorDB Over Write Test\n");
+
+	/*be sure empty database*/
+	if(Used_Record)
+	{
+		
+		printf("Have %d record try empty DB\n",Used_Record);
+		uint32_t add_record = Total_Capacity - Used_Record;
+		for(int i=0;i<add_record;i++)
+		{
+			/*get random record*/
+			get_RandomRecord(&temp);
+			NorDB_AddRecord(DB, &temp);
+		}
+
+		for(int i=0;i<Total_Capacity;i++)
+		{
+			NorDB_ReadRecord(DB, &temp);
+		}
+	}
+
+	uint32_t LastUpdateSector = -1;
+	for(int i=0;i<Total_Capacity;i++)
+	{
+		/*get random record*/
+		get_RandomRecord(&temp);
+		uint32_t x = NorDB_AddRecord(DB, &temp);
+		if(x==0)
+		{
+			printf("Error to add Rec %i\n",i);
+			return false;
+		}
+
+		uint32_t useSector = (x/Sector_Size);
+		if(LastUpdateSector!=useSector)
+		{
+			printf("Sector %d Fill Completed\n",useSector);
+			LastUpdateSector = useSector;
+		}
+	}
+	printf("incert %d Record in DB Completed\n\n",Total_Capacity);
+	printf("Add One Record More!\n");
+	/*try add another record*/
+	get_RandomRecord(&temp);
+	uint32_t x = NorDB_AddRecord(DB, &temp);
+	if(x!=0)
+	{
+		printf("Over Write Test Failed %i\n",x);
+		return false;
+	}
+	printf("Every Think is OK.\n");
+	
+	/*Try ReadBack*/
+	LastUpdateSector = -1;
+	for(int i=0;i<Total_Capacity;i++)
+	{
+		/*get random record*/
+		uint32_t x = NorDB_ReadRecord(DB, &temp);
+		if(x==0)
+		{
+			printf("Error to Read Rec %i\n",i);
+			return false;
+		}
+
+		if(check_bummyRecord(&temp)==false)
+		{
+			printf("Read Reocrd not Correct!\n");
+			return false;
+		}
+
+		uint32_t useSector = (x/Sector_Size);
+		if(LastUpdateSector!=useSector)
+		{
+			printf("Sector %d Read Completed\n",useSector);
+			LastUpdateSector = useSector;
+		}
+	}
+
+	printf("Over Write Protection Correctly Work:)\n\n",Total_Capacity);
 	return true;
 }
