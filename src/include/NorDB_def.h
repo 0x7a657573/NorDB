@@ -14,7 +14,7 @@
 #include <stdio.h>
 
 #define NorDB_Magic	        0x0766
-#define NorDB_RVer	        0x0001
+#define NorDB_RVer	        0x0002
 
 #define nordb_FreeMark		0xFF
 #define nordb_UnReadMark	0xF0

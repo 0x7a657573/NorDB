@@ -8,7 +8,12 @@
 #include "NorDB.h"
 #include <string.h>
 
-uint32_t NorDB_SyncUnreadPoint(NorDB_t *db);
+
+#define Is_TrueHeader(db,Header) 	(Header->Magic==NorDB_Magic && \
+									 Header->Vertion==NorDB_RVer && \
+									 Header->RecordSize==db->Record_Size)
+
+void NorDB_SyncData(NorDB_t *db);
 
 static uint8_t crc8x_table[] =
 {
@@ -54,6 +59,8 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 	NorDB_t *DB = nordb_malloc(sizeof(NorDB_t));
 	if(!DB)
 		return NULL;
+	
+	nordb_memset(DB,0,sizeof(NorDB_t));
 	DB->DB_ll = hw;
 	DB->Record_Size = RecordSize + sizeof(uint8_t);	/*add one byte crc*/
 	if((DB->Record_Size+sizeof(NorDB_Header_t)+1) > hw->SectorSize)
@@ -67,7 +74,7 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 	DB->Header_Cache = (uint8_t*)nordb_malloc(DB->Header_Size);
 
 	hw->TotalUnreadRecord = 0;
-	hw->TotalUnreadRecord = NorDB_SyncUnreadPoint(DB);
+	NorDB_SyncData(DB);
 	return DB;
 }
 
@@ -81,9 +88,12 @@ bool NorDB_Init_Sector(NorDB_t *db, int Sector)
 
 	/*erase sector*/
 	hw->SectorErace(hw->Param,Sector*hw->SectorSize);
-
+	
+	db->SyncCounter++;
 	NorDB_Header_t Header;
-	Header.Magic = NorDB_Magic;
+	Header.Magic 	= NorDB_Magic;
+	Header.Vertion	= NorDB_RVer;
+	Header.SyncCounter = db->SyncCounter;
 	Header.RecordSize = db->Record_Size;
 
 	/*write header*/
@@ -91,7 +101,7 @@ bool NorDB_Init_Sector(NorDB_t *db, int Sector)
 	return true;
 }
 
-uint32_t NorDB_Find_First_Free_point_in_Sector(NorDB_t *db, int Start_Sector_Search,NorDB_Header_t *Header)
+uint32_t NorDB_Find_First_Free_point_in_Sector(NorDB_t *db, int Start_Sector_Search,NorDB_Header_t *Header,bool canformatinused)
 {
   if(db==NULL)	return 0;
   NorDB_HWLayer *hw = db->DB_ll;
@@ -100,20 +110,35 @@ uint32_t NorDB_Find_First_Free_point_in_Sector(NorDB_t *db, int Start_Sector_Sea
   hw->ReadBuffer(hw->Param,(Start_Sector_Search*hw->SectorSize),(uint8_t*)Header,db->Header_Size);
 
   /*not init sector*/
-  if(Header->Magic!=NorDB_Magic || Header->RecordSize!=db->Record_Size)
+  if(!Is_TrueHeader(db,Header))
   {
 	  if(NorDB_Init_Sector(db, Start_Sector_Search))
 		  return (Start_Sector_Search*hw->SectorSize) + db->Header_Size;
 	  return 0;
   }
 
+  bool its_used = true;
   for(int i=0;i<db->Record_NumberInSector;i++)
   {
+	  
 	  /*if record is free*/
 	  if(Header->Records[i] == nordb_FreeMark)
 	  {
 		  return (Start_Sector_Search*hw->SectorSize) + db->Header_Size + (i * (db->Record_Size));
 	  }
+
+ 	  if(Header->Records[i] != nordb_ReadMark)
+	  {
+		its_used = false;
+	  }
+  }
+  
+  /*we can use this sector*/
+  if(its_used && canformatinused)
+  {
+	if(NorDB_Init_Sector(db, Start_Sector_Search))
+		return (Start_Sector_Search*hw->SectorSize) + db->Header_Size;
+	return 0;
   }
 
   /*not found*/
@@ -126,35 +151,43 @@ uint32_t NorDB_GetWriteable_Record(NorDB_t *db)
 		return 0;
 
 	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
-
-	for(uint32_t i=0; i< db->DB_ll->SectorNumber; i++)
+	bool CanForamtInUsed = false;
+	for(int i=0;i<2;i++)
 	{
-		uint32_t res = NorDB_Find_First_Free_point_in_Sector(db, i,Header);
+		uint16_t SearchSector = (db->LastWriteSector) >= db->DB_ll->SectorNumber ? 0:db->LastWriteSector;
+		uint32_t res = NorDB_Find_First_Free_point_in_Sector(db, SearchSector,Header,CanForamtInUsed);
 		if(res!=0)
 		{
+			db->LastWriteSector = SearchSector;
 			return res;
 		}
+		/*we can not found free pos try next sector*/	
+  		db->LastWriteSector++;
+		CanForamtInUsed = true;
 	}
 	return 0;
 }
 
-uint32_t NorDB_SyncUnreadPoint(NorDB_t *db)
+void NorDB_SyncData(NorDB_t *db)
 {
 	if(db==NULL)
-		return 0;
+		return;
+
 	uint32_t UnreadRecord = 0;
 
 	NorDB_HWLayer *hw = db->DB_ll;
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
 	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
+	db->SyncCounter = 0;
+
 	for(uint32_t i=0; i< db->DB_ll->SectorNumber; i++)
 	{
 		/*read header*/
 		hw->ReadBuffer(hw->Param,(i*hw->SectorSize),(uint8_t*)Header,db->Header_Size);
 
 		/*not init sector*/
-		if(Header->Magic!=NorDB_Magic || Header->RecordSize!=db->Record_Size)
+		if(!Is_TrueHeader(db,Header))
 		{
 			continue;
 		}
@@ -164,14 +197,21 @@ uint32_t NorDB_SyncUnreadPoint(NorDB_t *db)
 		  /*if record is free*/
 		  if(Header->Records[i] == nordb_UnReadMark)
 		  {
-			  UnreadRecord++;
+			UnreadRecord++;
 		  }
+		}
+
+		/*find last sync number*/
+		if(db->SyncCounter < Header->SyncCounter)
+		{
+			db->SyncCounter = Header->SyncCounter;
+			db->LastWriteSector = i;
 		}
 	}
 
+	hw->TotalUnreadRecord = UnreadRecord;
 	/*unlock io*/
 	NorDB_sem_Unlock(&hw->sema);
-	return UnreadRecord;
 }
 
 uint32_t NorDB_Find_First_Unread_point_in_Sector(NorDB_t *db ,uint32_t Start_Sector_Search,NorDB_Header_t *Header)
@@ -185,7 +225,7 @@ uint32_t NorDB_Find_First_Unread_point_in_Sector(NorDB_t *db ,uint32_t Start_Sec
 	hw->ReadBuffer(hw->Param,(Start_Sector_Search*hw->SectorSize),(uint8_t*)Header,db->Header_Size);
 
 	/*not init sector*/
-	if(Header->Magic!=NorDB_Magic || Header->RecordSize!=db->Record_Size)
+	if(!Is_TrueHeader(db,Header))
 	{
 		return 0;
 	}
@@ -270,7 +310,7 @@ uint32_t NorDB_EraseAllErasableSector(NorDB_t *db)
 	  hw->ReadBuffer(hw->Param,(j*hw->SectorSize),(uint8_t*)Header,db->Header_Size); /* Load Write Buf*/
 
 	  /*if sector not valid header*/
-	  if(Header->Magic!=NorDB_Magic || Header->RecordSize!=db->Record_Size)
+	  if(!Is_TrueHeader(db,Header))
 	  {
 	    NorDB_Init_Sector(db, j);
 	    Total_Erasable_Sector++;
@@ -314,6 +354,7 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
  	uint32_t Record = NorDB_GetWriteable_Record(db);
 	if(Record==0)
 	{
+		printf("--------------------------+WE Get Bing Error\r\n");
 		if(NorDB_EraseAllErasableSector(db)==0)
 		{
 			/*XXX erase oldest data or not ?*/

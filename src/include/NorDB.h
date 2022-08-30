@@ -40,11 +40,15 @@ typedef struct
 	uint16_t Header_Size;
 	uint16_t Record_Size;
 	uint16_t Record_NumberInSector;
+	uint32_t SyncCounter;
+	uint16_t LastWriteSector;
 }NorDB_t;
 
 typedef struct __attribute__((__packed__))
 {
 	uint16_t Magic;
+	uint16_t Vertion;
+	uint32_t SyncCounter;
 	uint16_t RecordSize;
 	uint8_t  Records[];
 }NorDB_Header_t;
