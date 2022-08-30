@@ -331,7 +331,7 @@ bool OverWrite_Test(NorDB_t *DB)
 		printf("Over Write Test Failed %i\n",x);
 		return false;
 	}
-	printf("Every Think is OK.\n");
+	printf("Every Think is OK.\n\n");
 	
 	/*Try ReadBack*/
 	LastUpdateSector = -1;
