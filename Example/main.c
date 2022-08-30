@@ -246,7 +246,7 @@ bool RoundRobin_Test(NorDB_t *DB)
 			lastSectorUse = WriteSector;
 		else if(lastSectorUse == WriteSector)
 		{
-			printf("Test Faild\n");	
+			printf("Round Robin Test Faild\n");	
 			return false;
 		}
 		else
@@ -254,6 +254,7 @@ bool RoundRobin_Test(NorDB_t *DB)
 			break;
 		}
 	} while (1);
+	printf("Round Robin Correctly Work:)\n\n",Total_Capacity);
 
 	return true;
 }
