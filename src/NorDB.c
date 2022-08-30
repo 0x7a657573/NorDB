@@ -354,20 +354,7 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
  	uint32_t Record = NorDB_GetWriteable_Record(db);
 	if(Record==0)
 	{
-		printf("--------------------------+WE Get Bing Error\r\n");
-		if(NorDB_EraseAllErasableSector(db)==0)
-		{
-			/*XXX erase oldest data or not ?*/
-			NorDB_sem_Unlock(&hw->sema);
-			return 0;
-		}
-		Record = NorDB_GetWriteable_Record(db);
-		if(Record == 0)
-		{
-			/*unlock io*/
-			NorDB_sem_Unlock(&hw->sema);
-			return 0;
-		}
+		return 0;
 	}
 
 	NorDB_Set_Write_Header_In_sector(db,Record);
