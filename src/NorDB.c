@@ -197,10 +197,10 @@ void NorDB_SyncData(NorDB_t *db)
 		}
 
 		bool HasUnread = false;
-		for(int i=0;i<db->Record_NumberInSector;i++)
+		for(int j=0;j<db->Record_NumberInSector;j++)
 		{
 		  /*if record is free*/
-		  if(Header->Records[i] == nordb_UnReadMark)
+		  if(Header->Records[j] == nordb_UnReadMark)
 		  {
 			HasUnread = true;
 			UnreadRecord++;
@@ -211,9 +211,9 @@ void NorDB_SyncData(NorDB_t *db)
 		if(HasUnread)
 		{
 			/*find lower number of syncCounter*/
-			if(LastRead > hw->SyncCounter)
+			if(LastRead > Header->SyncCounter)
 			{
-				LastRead = hw->SyncCounter;
+				LastRead = Header->SyncCounter;
 				hw->LastReadSector = i;
 			}
 		}
@@ -224,6 +224,11 @@ void NorDB_SyncData(NorDB_t *db)
 			hw->SyncCounter = Header->SyncCounter;
 			hw->LastWriteSector = i;
 		}
+	}
+
+	if(UnreadRecord==0)
+	{
+		hw->LastReadSector = hw->LastWriteSector;
 	}
 
 	hw->TotalUnreadRecord = UnreadRecord;
