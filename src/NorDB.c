@@ -73,8 +73,11 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 	DB->Record_NumberInSector = (hw->SectorSize - DB->Header_Size) / DB->Record_Size;
 	DB->Header_Cache = (uint8_t*)nordb_malloc(DB->Header_Size);
 
-	hw->TotalUnreadRecord = 0;
-	NorDB_SyncData(DB);
+	if(!hw->Synced)
+	{
+		NorDB_SyncData(DB);
+	}
+	
 	return DB;
 }
 
@@ -224,6 +227,7 @@ void NorDB_SyncData(NorDB_t *db)
 	}
 
 	hw->TotalUnreadRecord = UnreadRecord;
+	hw->Synced = true;
 	/*unlock io*/
 	NorDB_sem_Unlock(&hw->sema);
 }
