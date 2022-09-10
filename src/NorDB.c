@@ -270,16 +270,21 @@ uint32_t NorDB_GetReadable_Record(NorDB_t *db)
 {
 	if(db==NULL)
 		return 0;
+	if(db->DB_ll->TotalUnreadRecord==0)
+		return 0;
 
 	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
-
-	for(uint32_t i=0; i< db->DB_ll->SectorNumber; i++)
+	uint16_t SearchSector = db->DB_ll->LastReadSector;
+	for(int i=0;i<3;i++)
 	{
-		uint32_t res = NorDB_Find_First_Unread_point_in_Sector(db, i,Header);
+		uint32_t res = NorDB_Find_First_Unread_point_in_Sector(db, SearchSector,Header);
 		if(res!=0)
 		{
+			db->DB_ll->LastReadSector = SearchSector;
 			return res;
 		}
+		/*we can not found free pos try next sector*/	
+		SearchSector = (++SearchSector) >= db->DB_ll->SectorNumber ? 0:SearchSector;
 	}
 	return 0;
 }
@@ -431,12 +436,12 @@ uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData)
 	NorDB_sem_Lock(&hw->sema);
 
 	uint32_t Record = NorDB_GetReadable_Record(db);
-		if(Record==0)
-		{
-			/*unlock io*/
-			NorDB_sem_Unlock(&hw->sema);
-			return 0;
-		}
+	if(Record==0)
+	{
+		/*unlock io*/
+		NorDB_sem_Unlock(&hw->sema);
+		return 0;
+	}
 
 	uint8_t Temp_Buffer[db->Record_Size];
 	uint16_t Record_Crc = 0;
