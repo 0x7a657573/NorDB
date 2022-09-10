@@ -89,11 +89,11 @@ bool NorDB_Init_Sector(NorDB_t *db, int Sector)
 	/*erase sector*/
 	hw->SectorErace(hw->Param,Sector*hw->SectorSize);
 	
-	db->SyncCounter++;
+	hw->SyncCounter++;
 	NorDB_Header_t Header;
 	Header.Magic 	= NorDB_Magic;
 	Header.Vertion	= NorDB_RVer;
-	Header.SyncCounter = db->SyncCounter;
+	Header.SyncCounter = hw->SyncCounter;
 	Header.RecordSize = db->Record_Size;
 
 	/*write header*/
@@ -152,13 +152,13 @@ uint32_t NorDB_GetWriteable_Record(NorDB_t *db)
 
 	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
 	bool CanForamtInUsed = false;
-	uint16_t SearchSector = db->LastWriteSector;
+	uint16_t SearchSector = db->DB_ll->LastWriteSector;
 	for(int i=0;i<2;i++)
 	{
 		uint32_t res = NorDB_Find_First_Free_point_in_Sector(db, SearchSector,Header,CanForamtInUsed);
 		if(res!=0)
 		{
-			db->LastWriteSector = SearchSector;
+			db->DB_ll->LastWriteSector = SearchSector;
 			return res;
 		}
 		/*we can not found free pos try next sector*/	
@@ -179,7 +179,8 @@ void NorDB_SyncData(NorDB_t *db)
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
 	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
-	db->SyncCounter = 0;
+	hw->SyncCounter = 0;
+	uint32_t LastRead = UINT32_MAX;
 
 	for(uint32_t i=0; i< db->DB_ll->SectorNumber; i++)
 	{
@@ -192,20 +193,33 @@ void NorDB_SyncData(NorDB_t *db)
 			continue;
 		}
 
+		bool HasUnread = false;
 		for(int i=0;i<db->Record_NumberInSector;i++)
 		{
 		  /*if record is free*/
 		  if(Header->Records[i] == nordb_UnReadMark)
 		  {
+			HasUnread = true;
 			UnreadRecord++;
 		  }
 		}
 
-		/*find last sync number*/
-		if(db->SyncCounter < Header->SyncCounter)
+		/*this sector has unread record ?*/
+		if(HasUnread)
 		{
-			db->SyncCounter = Header->SyncCounter;
-			db->LastWriteSector = i;
+			/*find lower number of syncCounter*/
+			if(LastRead > hw->SyncCounter)
+			{
+				LastRead = hw->SyncCounter;
+				hw->LastReadSector = i;
+			}
+		}
+
+		/*find last sync number*/
+		if(hw->SyncCounter < Header->SyncCounter)
+		{
+			hw->SyncCounter = Header->SyncCounter;
+			hw->LastWriteSector = i;
 		}
 	}
 

@@ -19,6 +19,12 @@ typedef struct
 	/*statistics var*/
 	uint32_t TotalUnreadRecord;
 
+	/*Read/Write Sync*/
+	bool	 Synced;
+	uint32_t SyncCounter;
+	uint16_t LastWriteSector;
+	uint16_t LastReadSector;
+
 	void 	*Param;
 	void 	(*Erase)(void*Param);
 	void 	(*SectorErace)(void*Param,uint32_t address);
@@ -40,8 +46,6 @@ typedef struct
 	uint16_t Header_Size;
 	uint16_t Record_Size;
 	uint16_t Record_NumberInSector;
-	uint32_t SyncCounter;
-	uint16_t LastWriteSector;
 }NorDB_t;
 
 typedef struct __attribute__((__packed__))
