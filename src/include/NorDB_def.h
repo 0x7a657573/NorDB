@@ -20,6 +20,10 @@
 #define nordb_UnReadMark	0xF0
 #define nordb_ReadMark		0x00
 
+/*Log Founction*/
+#define info_log	//printf
+#define err_log
+
 /*heap and memory management*/
 #define nordb_malloc(x)	malloc(x)
 #define nordb_free(x)	free(x)
