@@ -270,22 +270,35 @@ uint32_t NorDB_GetReadable_Record(NorDB_t *db)
 {
 	if(db==NULL)
 		return 0;
+
 	if(db->DB_ll->TotalUnreadRecord==0)
 		return 0;
 
+	NorDB_HWLayer *hw = db->DB_ll;
 	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
-	uint16_t SearchSector = db->DB_ll->LastReadSector;
-	for(int i=0;i<3;i++)
+	uint16_t TotalSearchSector = (hw->LastReadSector < hw->LastWriteSector) ? 
+								 (hw->LastWriteSector - hw->LastReadSector):
+								 ((hw->SectorNumber - hw->LastReadSector) + hw->LastWriteSector);
+	info_log("R->LastWrite:%i, LastRead:%i, TotalSearch:%i\r\n",hw->LastWriteSector,
+				hw->LastReadSector,TotalSearchSector);
+	for(int i=hw->LastReadSector;i<=hw->LastReadSector+TotalSearchSector;i++)
 	{
+		uint16_t SearchSector = (i >= hw->SectorNumber) ? (i-hw->SectorNumber):i;
 		uint32_t res = NorDB_Find_First_Unread_point_in_Sector(db, SearchSector,Header);
+		info_log("   -> Current:%i -> %i\r\n",SearchSector,res);
 		if(res!=0)
 		{
-			db->DB_ll->LastReadSector = SearchSector;
+			hw->LastReadSector = SearchSector;
 			return res;
 		}
 		/*we can not found free pos try next sector*/	
-		SearchSector = (++SearchSector) >= db->DB_ll->SectorNumber ? 0:SearchSector;
 	}
+	
+	err_log("   Err-> Can Not Found(unRead:%i).\r\n",hw->TotalUnreadRecord);
+	/*need update unread point :|*/
+	/*maybe we have bad sector*/
+	//hw->TotalUnreadRecord=0;
+
 	return 0;
 }
 
