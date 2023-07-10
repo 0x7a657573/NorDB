@@ -52,6 +52,14 @@ unsigned NorDB_crc8x_fast(void const *mem, size_t len)
     return crc;
 }
 
+
+/**
+ * @brief	Create a NOR-DB in a sector of the HW 
+ * 
+ * @param hw 
+ * @param RecordSize 
+ * @return NorDB_t* 
+*/
 NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 {
 	if(!hw)
@@ -75,12 +83,20 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 
 	if(!hw->Synced)
 	{
-		NorDB_SyncData(DB);
+		NorDB_SyncData(DB);		// At beginning it checks that how many data are read and wrote and update their counter
 	}
 	
 	return DB;
 }
 
+/**
+ * @brief Erase the sector and add the header
+ * 
+ * @param db 
+ * @param Sector 
+ * @return true 
+ * @return false 
+*/
 bool NorDB_Init_Sector(NorDB_t *db, int Sector)
 {
 	NorDB_HWLayer *hw = db->DB_ll;
@@ -104,6 +120,17 @@ bool NorDB_Init_Sector(NorDB_t *db, int Sector)
 	return true;
 }
 
+/**
+ * @brief 	Check the DB from the given address, if it does nat have a header it means this is a free sector
+ * 			Otherwise it start searching sector by sector to find a sector which has at least a non read data. 
+ * 			If all of data from a sector are read, it inits this sector and stop checking others.
+ * 
+ * @param db 
+ * @param Start_Sector_Search 
+ * @param Header 
+ * @param canformatinused 
+ * @return uint32_t 
+*/
 uint32_t NorDB_Find_First_Free_point_in_Sector(NorDB_t *db, int Start_Sector_Search,NorDB_Header_t *Header,bool canformatinused)
 {
   if(db==NULL)	return 0;
@@ -148,6 +175,12 @@ uint32_t NorDB_Find_First_Free_point_in_Sector(NorDB_t *db, int Start_Sector_Sea
   return 0;
 }
 
+/**
+ * @brief Return a writeable record without erasing filled one.
+ * 
+ * @param db 
+ * @return uint32_t 
+*/
 uint32_t NorDB_GetWriteable_Record(NorDB_t *db)
 {
 	if(db==NULL)
@@ -171,6 +204,12 @@ uint32_t NorDB_GetWriteable_Record(NorDB_t *db)
 	return 0;
 }
 
+
+/**
+ * @brief At beginning it checks that how many data are read and wrote and update their counter
+ * 
+ * @param db 
+*/
 void NorDB_SyncData(NorDB_t *db)
 {
 	if(db==NULL)
@@ -237,6 +276,14 @@ void NorDB_SyncData(NorDB_t *db)
 	NorDB_sem_Unlock(&hw->sema);
 }
 
+/**
+ * @brief Check the read bytes of the header from given sector, if there are any unread data in the sector it will return its address
+ * 
+ * @param db 
+ * @param Start_Sector_Search 
+ * @param Header 
+ * @return uint32_t 
+*/
 uint32_t NorDB_Find_First_Unread_point_in_Sector(NorDB_t *db ,uint32_t Start_Sector_Search,NorDB_Header_t *Header)
 {
 	if(db==NULL)
@@ -266,6 +313,12 @@ uint32_t NorDB_Find_First_Unread_point_in_Sector(NorDB_t *db ,uint32_t Start_Sec
 	return 0;
 }
 
+/**
+ * @brief Check the DB to find how many unread sectors are remained, then return the first unread one.
+ * 
+ * @param db 
+ * @return uint32_t 
+*/
 uint32_t NorDB_GetReadable_Record(NorDB_t *db)
 {
 	if(db==NULL)
@@ -302,6 +355,12 @@ uint32_t NorDB_GetReadable_Record(NorDB_t *db)
 	return 0;
 }
 
+/**
+ * @brief 
+ * 
+ * @param db 
+ * @param Point_Adr 
+*/
 void NorDB_Set_Write_Header_In_sector(NorDB_t *db,uint32_t Point_Adr)
 {
   if(db==NULL)
@@ -315,6 +374,12 @@ void NorDB_Set_Write_Header_In_sector(NorDB_t *db,uint32_t Point_Adr)
   hw->WriteBuffer(hw->Param,SecNumber*hw->SectorSize + RecordIndex,&data,1);
 }
 
+/**
+ * @brief Set the write flag of the desire data in the header of ther sector
+ * 
+ * @param db 
+ * @param Point_Adr 
+*/
 void NorDB_Set_Read_Header_In_sector(NorDB_t *db,uint32_t Point_Adr)
 {
 	if(db==NULL)
@@ -329,6 +394,12 @@ void NorDB_Set_Read_Header_In_sector(NorDB_t *db,uint32_t Point_Adr)
 	hw->WriteBuffer(hw->Param,SecNumber*hw->SectorSize + RecordIndex,&data,1);
 }
 
+/**
+ * @brief Erase all sectors in which all of their data has been read.
+ * 
+ * @param db 
+ * @return uint32_t 
+*/
 uint32_t NorDB_EraseAllErasableSector(NorDB_t *db)
 {
 	if(db==NULL)
@@ -379,6 +450,13 @@ uint32_t NorDB_EraseAllErasableSector(NorDB_t *db)
   return Total_Erasable_Sector;
 }
 
+/**
+ * @brief 
+ * 
+ * @param db 
+ * @param RecoedData 
+ * @return uint32_t 
+*/
 uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
 {
 	if(db==NULL)
@@ -438,6 +516,13 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
 	return Record;
 }
 
+/**
+ * @brief Get the first readable data and checks its CRC, if everything is ok it fill the input buffer (RecoedData)
+ * 
+ * @param db 
+ * @param RecoedData 
+ * @return uint32_t 
+*/
 uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData)
 {
 	if(db==NULL)

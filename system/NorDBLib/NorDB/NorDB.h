@@ -12,12 +12,12 @@
 
 typedef struct
 {
-	NorDB_sem_t	sema;
-	uint16_t SectorSize;
-	uint16_t SectorNumber;
+	NorDB_sem_t	sema;   // semaphore for working with DB
+	uint16_t SectorSize;    // Sector size of the hardware
+	uint16_t SectorNumber;  // Total number of sectors the HW has
 
 	/*statistics var*/
-	uint32_t TotalUnreadRecord;
+	uint32_t TotalUnreadRecord; 
 
 	/*Read/Write Sync*/
 	bool	 Synced;
@@ -37,20 +37,20 @@ typedef struct
 
 typedef struct
 {
-	NorDB_HWLayer *DB_ll;
+	NorDB_HWLayer *DB_ll;	//HW layer for DB
 
 	/*hw interface cache*/
 
 	/*database var*/
 	uint8_t  *Header_Cache;
-	uint16_t Header_Size;
-	uint16_t Record_Size;
+	uint16_t Header_Size;			// Total length of a header in a sector
+	uint16_t Record_Size;			// length of data + crc for a block
 	uint16_t Record_NumberInSector;
 }NorDB_t;
 
 typedef struct __attribute__((__packed__))
 {
-	uint16_t Magic;
+	uint16_t Magic;	//Signature
 	uint16_t Vertion;
 	uint32_t SyncCounter;
 	uint16_t RecordSize;
