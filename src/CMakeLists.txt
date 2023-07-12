@@ -25,7 +25,6 @@ set(LIBRARY_SOURCE
 
 project(${PROJECT_NAME} C)
 
-# check for pthread library
 find_package(Threads REQUIRED)
 
 add_library(${LIBRARY_NAME} STATIC

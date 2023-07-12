@@ -10,7 +10,6 @@ set(SOURCE
 
 set(INC_FILES
     ../../src/include
-    # ../src/include/ll
 )
 
 set(PROJECT_NAME

@@ -22,14 +22,8 @@ set(LIBRARY_NAME
     CH341_Lib
 )
 
-# add_subdirectory(CH341)
 
 project(${PROJECT_NAME} C)
-
-# add_library(${LIBRARY_NAME} STATIC CH341)
-# set_target_properties(${LIBRARY_NAME}  PROPERTIES LINKER_LANGUAGE C)
-# target_include_directories(${LIBRARY_NAME} PUBLIC CH341)
-# target_link_libraries(${LIBRARY_NAME} PUBLIC CH341 SPI_example.c)
 
 add_executable(${PROJECT_NAME} ${SOURCE} ${INC_FILES})
 
