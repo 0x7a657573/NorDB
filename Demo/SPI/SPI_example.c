@@ -13,8 +13,9 @@
 #include <string.h>
 #include <time.h>
 #include <NorDB.h>
-#include <ll/Ram_ll.h>
-#include <ll/File_ll.h>
+#include <ll/SpiFlash_ll.h>
+#include "ch341.h"
+
 typedef struct  __attribute__((__packed__))
 {
 	uint8_t  dummy[11];
@@ -25,48 +26,13 @@ bool FullFill_Tetst(NorDB_t *DB);
 bool RoundRobin_Test(NorDB_t *DB);
 bool OverWrite_Test(NorDB_t *DB);
 
+int spiFlashTest(void);
+
 int main(void)
 {
 	/*add record to DB*/
-	dummy_t temp;
-	srand(time(NULL));
-
-	NorDB_HWLayer *File_Hw = Filell_Init("Nor.db",512,4);	
-	NorDB_t *DB = NorDB(File_Hw,sizeof(dummy_t));
-
-	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
-	uint32_t Sector_Number = DB->DB_ll->SectorNumber;
-	uint32_t Record_Sector = DB->Record_NumberInSector;
-	uint32_t Total_Capacity = Record_Sector * Sector_Number;
-	printf("NorDB Tests\n\tSectors:%d\n",Sector_Number);
-	printf("\tRecordPerSector:%d\n",Record_Sector);
-	printf("\tTotal Capacity:%d\n",Total_Capacity);
-
-	/*fill test*/
-	if(!FullFill_Tetst(DB))
-	{
-		printf("Fill Test Not Complete\n");
-		Filell_Del(File_Hw);
-		return EXIT_FAILURE;
-	}
-
-	/*Round Robin test*/
-	if(!RoundRobin_Test(DB))
-	{
-		printf("Round Robin Test Not Complete\n");
-		Filell_Del(File_Hw);
-		return EXIT_FAILURE;
-	}
-
-	/*OverWrite test*/
-	if(!OverWrite_Test(DB))
-	{
-		printf("Over Write Test Not Complete\n");
-		Filell_Del(File_Hw);
-		return EXIT_FAILURE;
-	}
-
-	Filell_Del(File_Hw);
+	CH341DeviceInit();
+	spiFlashTest();
 	return EXIT_SUCCESS;
 }
 
@@ -362,3 +328,65 @@ bool OverWrite_Test(NorDB_t *DB)
 	printf("Over Write Protection Correctly Work:)\n\n",Total_Capacity);
 	return true;
 }
+
+
+
+int spiFlashTest(void)
+{
+	dummy_t temp;
+	srand(time(NULL));
+	
+	SpiFlashll_HW SpiHw;
+	SpiHw.SpiChipSelect = CH341ChipSelect;
+	SpiHw.SpiRead = &CH341ReadSPI;
+	SpiHw.SpiStream = &CH341StreamSPI;
+	SpiHw.SpiWrite = &CH341WriteSPI;
+
+	NorDB_HWLayer *Spi_HW = SpiFlashll_Init(&SpiHw, 4096, 4);
+	NorDB_t *DB = NorDB(Spi_HW,sizeof(dummy_t));
+	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
+	uint32_t Sector_Number = DB->DB_ll->SectorNumber;
+	uint32_t Record_Sector = DB->Record_NumberInSector;
+	uint32_t Total_Capacity = Record_Sector * Sector_Number;
+
+	printf("************************************\n");
+	printf("***********SPI Flash Test***********\n");
+	printf("************************************\n");
+
+	printf("NorDB Tests\n\tSectors:%d\n",Sector_Number);
+	printf("\tRecordPerSector:%d\n",Record_Sector);
+	printf("\tTotal Capacity:%d\n",Total_Capacity);
+
+	printf("***************************************\n");
+	printf("Sector_Size:%d\n",Sector_Size);
+	printf("Sector_Number:%d\n",Sector_Number);
+	printf("Record_NumberInSector:%d\n",Record_Sector);
+	printf("***************************************\n");
+
+	/*fill test*/
+	if(!FullFill_Tetst(DB))
+	{
+		printf("Fill Test Not Complete\n");
+		SpiFlash_Del(Spi_HW);
+		return EXIT_FAILURE;
+	}
+
+	/*Round Robin test*/
+	if(!RoundRobin_Test(DB))
+	{
+		printf("Round Robin Test Not Complete\n");
+		SpiFlash_Del(Spi_HW);
+		return EXIT_FAILURE;
+	}
+
+	/*OverWrite test*/
+	if(!OverWrite_Test(DB))
+	{
+		printf("Over Write Test Not Complete\n");
+		SpiFlash_Del(Spi_HW);
+		return EXIT_FAILURE;
+	}
+
+	SpiFlash_Del(Spi_HW);
+}
+

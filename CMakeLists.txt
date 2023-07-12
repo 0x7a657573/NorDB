@@ -3,28 +3,66 @@ cmake_minimum_required(VERSION 3.5.0)
 set(PROJECT_NAME
     NorDB_ex
 )
-set(SOURCE_DIR
-    Example
-)
-set(SOURCE
-    ${SOURCE_DIR}/main.c
-)
+
 set(LIBRARIES_DIR
     src
 )
+
 set(LIBRARIES 
     NorDB
 )
 
-
-
 project(${PROJECT_NAME} C)
 
-add_executable(${PROJECT_NAME} ${SOURCE})
+# add_executable(${PROJECT_NAME} ${SOURCE})
+add_library(${PROJECT_NAME} src)
 
-foreach(LIBRARY ${LIBRARIES})
-    add_subdirectory("${LIBRARIES_DIR}")
-endforeach(LIBRARY)
+add_subdirectory(src)
+add_subdirectory(Demo)
 
 target_link_libraries(${PROJECT_NAME} ${LIBRARIES})
 
+set_target_properties(${PROJECT_NAME} PROPERTIES LINKER_LANGUAGE C) 
+
+# set(LIBRARY_NAME
+#     NorDB
+# )
+# set(LIBRARY_HEADERS_DIR
+#     include
+# )
+# set(LIBRARY_HEADERS
+#     ${LIBRARY_HEADERS_DIR}/NorDB.h
+# )
+# set(LIBRARY_SOURCE_DIR
+#     .
+# )
+# set(LIBRARY_SOURCE
+#     ${LIBRARY_SOURCE_DIR}/NorDB.c
+#     ${LIBRARY_SOURCE_DIR}/sem_ll.c
+#     ${LIBRARY_SOURCE_DIR}/ll/Ram_ll.c
+#     ${LIBRARY_SOURCE_DIR}/ll/File_ll.c
+# )
+
+# project(${PROJECT_NAME} C)
+
+# # check for pthread library
+# find_package(Threads REQUIRED)
+
+# add_library(${LIBRARY_NAME} STATIC
+#     ${LIBRARY_HEADERS}
+#     ${LIBRARY_SOURCE}
+# )
+
+# target_include_directories(${LIBRARY_NAME} PRIVATE
+#     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
+#     $<INSTALL_INTERFACE:include/>
+# )
+
+# target_include_directories(${LIBRARY_NAME} PUBLIC
+#     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+#     $<INSTALL_INTERFACE:include>
+# )
+
+# TARGET_LINK_LIBRARIES(${PROJECT_NAME}
+#         pthread
+# )
