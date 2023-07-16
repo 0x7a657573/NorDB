@@ -336,13 +336,13 @@ int spiFlashTest(void)
 	dummy_t temp;
 	srand(time(NULL));
 	
-	SpiFlashll_HW SpiHw;
-	SpiHw.SpiChipSelect = CH341ChipSelect;
-	SpiHw.SpiRead = &CH341ReadSPI;
-	SpiHw.SpiStream = &CH341StreamSPI;
-	SpiHw.SpiWrite = &CH341WriteSPI;
+	SpiFlashll_HW *SpiHw = nordb_malloc(sizeof(SpiFlashll_HW));
+	SpiHw->SpiChipSelect = CH341ChipSelect;
+	SpiHw->SpiRead = &CH341ReadSPI;
+	SpiHw->SpiStream = &CH341StreamSPI;
+	SpiHw->SpiWrite = &CH341WriteSPI;
 
-	NorDB_HWLayer *Spi_HW = SpiFlashll_Init(&SpiHw, 4096, 4);
+	NorDB_HWLayer *Spi_HW = SpiFlashll_Init(SpiHw, 4096, 4);
 	NorDB_t *DB = NorDB(Spi_HW,sizeof(dummy_t));
 	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
 	uint32_t Sector_Number = DB->DB_ll->SectorNumber;

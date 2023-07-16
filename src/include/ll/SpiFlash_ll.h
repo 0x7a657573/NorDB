@@ -21,6 +21,8 @@ typedef struct
 
 typedef struct
 {
+	SpiFlashll_t 	*Param;
+	
 	bool	(*SpiChipSelect)(unsigned int cs, bool enable);
 	bool	(*SpiStream)(const unsigned char *in, unsigned char *out, unsigned int size);
 	bool	(*SpiWrite)(const unsigned char *in, unsigned int size);
@@ -49,24 +51,24 @@ typedef struct
 	uint8_t StatusRegister3;
 	uint8_t Lock;
 
-} w25qxx_t;
+} SF_t;
 
 ///////////////////////////////////////////////////////////////////////////
-void W25qxx_WaitForWriteEnd(void);
+void SF_WaitForWriteEnd(SpiFlashll_HW *SpiHw);
 
 ///////////////////////////////////////////////////////////////////////////
-void W25Q_Read_Manifacture_Device_ID(void);
-bool W25qxx_Init(void);
+void SFQ_Read_Manifacture_Device_ID(SpiFlashll_HW *SpiHw);
+bool SF_Init(SpiFlashll_HW *SpiHw);
 
 ///////////////////////////////////////////////////////////////////////////  
-void W25qxx_EraseChip(void);
-//void W25qxx_EraseSector(uint32_t SectorAddr);
-//void W25qxx_EraseBlock(uint32_t BlockAddr);
+void SF_EraseChip(SpiFlashll_HW *SpiHw);
+//void SF_EraseSector(uint32_t SectorAddr);
+//void SF_EraseBlock(uint32_t BlockAddr);
 
-void W25qxx_WriteByte(uint8_t pBuffer, uint32_t WriteAddr_inBytes);
-void W25qxx_WriteMoreByte(uint8_t *send, uint32_t len, uint32_t WriteAddr_inBytes);
-void W25qxx_Write(uint8_t *send, uint32_t len, uint32_t WriteAddr_inBytes);
+void SF_WriteByte(SpiFlashll_HW *SpiHw, uint8_t pBuffer, uint32_t WriteAddr_inBytes);
+void SF_WriteMoreByte(SpiFlashll_HW *SpiHw, uint8_t *send, uint32_t len, uint32_t WriteAddr_inBytes);
+void SF_Write(SpiFlashll_HW *SpiHw, uint8_t *send, uint32_t len, uint32_t WriteAddr_inBytes);
 
-void W25qxx_ReadByte(unsigned char *pBuffer, uint32_t ReadAddr);
-void W25qxx_ReadMoreByte(uint8_t *recive, uint32_t len, uint32_t WriteAddr_inBytes);
-void w25qxx_Read(uint8_t *recive, uint32_t len, uint32_t ReadAddr_inBytes);
+void SF_ReadByte(SpiFlashll_HW *SpiHw, unsigned char *pBuffer, uint32_t ReadAddr);
+void SF_ReadMoreByte(SpiFlashll_HW *SpiHw, uint8_t *recive, uint32_t len, uint32_t WriteAddr_inBytes);
+void SF_Read(SpiFlashll_HW *SpiHw, uint8_t *recive, uint32_t len, uint32_t ReadAddr_inBytes);
