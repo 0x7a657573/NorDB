@@ -13,7 +13,7 @@
 #include <string.h>
 #include <time.h>
 #include <NorDB.h>
-#include <ll/SpiFlash_ll.h>
+#include <ll/SerialNorFlash_ll.h>
 #include "ch341.h"
 
 typedef struct  __attribute__((__packed__))

@@ -20,7 +20,7 @@ set(LIBRARY_SOURCE
     ${LIBRARY_SOURCE_DIR}/sem_ll.c
     ${LIBRARY_SOURCE_DIR}/ll/Ram_ll.c
     ${LIBRARY_SOURCE_DIR}/ll/File_ll.c
-    ${LIBRARY_SOURCE_DIR}/ll/SpiFlash_ll.c
+    ${LIBRARY_SOURCE_DIR}/ll/SerialNorFlash_ll.c
 )
 
 project(${PROJECT_NAME} C)

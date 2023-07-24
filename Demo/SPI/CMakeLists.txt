@@ -4,7 +4,7 @@ set(SOURCE
     SPI_example.c
     ../../src/NorDB.c
     ../../src/sem_ll.c
-    ../../src/ll/SpiFlash_ll.c
+    ../../src/ll/SerialNorFlash_ll.c
     CH341/ch341.c
     CH341/stdafx.c
 )
