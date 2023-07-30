@@ -16,9 +16,9 @@
 #define NorDB_Magic	        0x0766
 #define NorDB_RVer	        0x0002
 
-#define nordb_FreeMark		0xFF
-#define nordb_UnReadMark	0xF0
-#define nordb_ReadMark		0x00
+#define nordb_FreeMark		0b11
+#define nordb_UnReadMark	0b10
+#define nordb_ReadMark		0b00
 
 /*Log Founction*/
 #define info_log	//printf

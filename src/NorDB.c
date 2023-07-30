@@ -9,6 +9,8 @@
 #include <string.h>
 
 
+#define nordb_GetBitStatus(bytes,index) ((bytes[index/4]>>((index*2)%8))&0b11)
+
 #define Is_TrueHeader(db,Header) 	(Header->Magic==NorDB_Magic && \
 									 Header->Vertion==NorDB_RVer && \
 									 Header->RecordSize==db->Record_Size)
@@ -69,7 +71,9 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 		return NULL;
 	}
 	
-	DB->Header_Size = (((hw->SectorSize - (sizeof(NorDB_Header_t))) / DB->Record_Size) + 1) + sizeof(NorDB_Header_t);
+	uint32_t max_record_in_sector = (((hw->SectorSize - (sizeof(NorDB_Header_t))) / DB->Record_Size) + 1);
+	uint32_t header_space_for_status = max_record_in_sector / 4 + 1;
+	DB->Header_Size = header_space_for_status + sizeof(NorDB_Header_t);
 	DB->Record_NumberInSector = (hw->SectorSize - DB->Header_Size) / DB->Record_Size;
 	DB->Header_Cache = (uint8_t*)nordb_malloc(DB->Header_Size);
 
@@ -123,14 +127,14 @@ uint32_t NorDB_Find_First_Free_point_in_Sector(NorDB_t *db, int Start_Sector_Sea
   bool its_used = true;
   for(int i=0;i<db->Record_NumberInSector;i++)
   {
-	  
+	  uint8_t Record_status = nordb_GetBitStatus(Header->Records,i);
 	  /*if record is free*/
-	  if(Header->Records[i] == nordb_FreeMark)
+	  if(Record_status == nordb_FreeMark)
 	  {
 		  return (Start_Sector_Search*hw->SectorSize) + db->Header_Size + (i * (db->Record_Size));
 	  }
 
- 	  if(Header->Records[i] != nordb_ReadMark)
+ 	  if(Record_status != nordb_ReadMark)
 	  {
 		its_used = false;
 	  }
@@ -201,7 +205,8 @@ void NorDB_SyncData(NorDB_t *db)
 		for(int j=0;j<db->Record_NumberInSector;j++)
 		{
 		  /*if record is free*/
-		  if(Header->Records[j] == nordb_UnReadMark)
+		  if(nordb_GetBitStatus(Header->Records,j) == nordb_UnReadMark)
+		  
 		  {
 			HasUnread = true;
 			UnreadRecord++;
@@ -258,7 +263,7 @@ uint32_t NorDB_Find_First_Unread_point_in_Sector(NorDB_t *db ,uint32_t Start_Sec
 	for(int i=0;i<db->Record_NumberInSector;i++)
 	{
 	  /*if record is free*/
-	  if(Header->Records[i] == nordb_UnReadMark)
+	  if(nordb_GetBitStatus(Header->Records,i) == nordb_UnReadMark)
 	  {
 		  return (Start_Sector_Search*hw->SectorSize) + db->Header_Size + (i * (db->Record_Size));
 	  }
@@ -310,10 +315,13 @@ void NorDB_Set_Write_Header_In_sector(NorDB_t *db,uint32_t Point_Adr)
   NorDB_HWLayer *hw = db->DB_ll;
   uint32_t SecNumber = Point_Adr/hw->SectorSize;
   Point_Adr%=hw->SectorSize;
-  int RecordIndex = ((Point_Adr - db->Header_Size)/db->Record_Size) + sizeof(NorDB_Header_t);
+  int RecordIndex = ((Point_Adr - db->Header_Size)/db->Record_Size);
+  int ByteAddress = (RecordIndex / 4) + sizeof(NorDB_Header_t);
+  int bit_shift   = ((RecordIndex%4)*2);
 
-  uint8_t data = nordb_UnReadMark;
-  hw->WriteBuffer(hw->Param,SecNumber*hw->SectorSize + RecordIndex,&data,1);
+  uint8_t data = ~(nordb_FreeMark<<bit_shift);
+  data |= nordb_UnReadMark << bit_shift;
+  hw->WriteBuffer(hw->Param,SecNumber*hw->SectorSize + ByteAddress,&data,1);
 }
 
 void NorDB_Set_Read_Header_In_sector(NorDB_t *db,uint32_t Point_Adr)
@@ -324,60 +332,13 @@ void NorDB_Set_Read_Header_In_sector(NorDB_t *db,uint32_t Point_Adr)
 
 	uint32_t SecNumber = Point_Adr/hw->SectorSize;
 	Point_Adr%=hw->SectorSize;
-	int RecordIndex = ((Point_Adr - db->Header_Size)/db->Record_Size) + sizeof(NorDB_Header_t);
+  	int RecordIndex = ((Point_Adr - db->Header_Size)/db->Record_Size);
+  	int ByteAddress = (RecordIndex / 4) + sizeof(NorDB_Header_t);
+  	int bit_shift   = ((RecordIndex%4)*2);
 
-	uint8_t data = nordb_ReadMark;
-	hw->WriteBuffer(hw->Param,SecNumber*hw->SectorSize + RecordIndex,&data,1);
-}
-
-uint32_t NorDB_EraseAllErasableSector(NorDB_t *db)
-{
-	if(db==NULL)
-		return 0;
-	NorDB_HWLayer *hw = db->DB_ll;
-
-
-	uint8_t Temp_Header[db->Header_Size];
-	NorDB_Header_t *Header = (NorDB_Header_t*)Temp_Header;
-
-	int32_t  Total_Erasable_Sector = 0;
-
-  if(!hw->DriverCheck(hw->Param))
-	  return 0;
-
-
-  for(uint32_t j=0;j<hw->SectorNumber;j++)
-  {
-	  /*read header*/
-	  hw->ReadBuffer(hw->Param,(j*hw->SectorSize),(uint8_t*)Header,db->Header_Size); /* Load Write Buf*/
-
-	  /*if sector not valid header*/
-	  if(!Is_TrueHeader(db,Header))
-	  {
-	    NorDB_Init_Sector(db, j);
-	    Total_Erasable_Sector++;
-	    continue;
-	  }
-
-	  bool IsEmptySector = true;
-	  for(int i=0;i<db->Record_NumberInSector;i++)
-	  {
-		  if(Header->Records[i]==nordb_UnReadMark)
-		  {
-			  IsEmptySector = false;
-			  break;
-		  }
-	  }
-
-	  if(IsEmptySector)
-	  {
-		  Total_Erasable_Sector++;
-		  NorDB_Init_Sector(db, j);
-		  break;
-	  }
-  }
-
-  return Total_Erasable_Sector;
+  	uint8_t data = ~(nordb_FreeMark<<bit_shift);
+  	data |= nordb_ReadMark << bit_shift;
+  	hw->WriteBuffer(hw->Param,SecNumber*hw->SectorSize + ByteAddress,&data,1);
 }
 
 uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
