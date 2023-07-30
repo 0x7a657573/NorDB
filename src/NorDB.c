@@ -319,7 +319,7 @@ void NorDB_Set_Write_Header_In_sector(NorDB_t *db,uint32_t Point_Adr)
   int ByteAddress = (RecordIndex / 4) + sizeof(NorDB_Header_t);
   int bit_shift   = ((RecordIndex%4)*2);
 
-  uint8_t data = 0;//~(nordb_FreeMark<<bit_shift);
+  uint8_t data = 0;
   hw->ReadBuffer(hw->Param,SecNumber*hw->SectorSize + ByteAddress,&data,1);
   data &= ~(nordb_FreeMark<<bit_shift);
   data |= nordb_UnReadMark << bit_shift;
@@ -338,7 +338,7 @@ void NorDB_Set_Read_Header_In_sector(NorDB_t *db,uint32_t Point_Adr)
   	int ByteAddress = (RecordIndex / 4) + sizeof(NorDB_Header_t);
   	int bit_shift   = ((RecordIndex%4)*2);
 
-  	uint8_t data = 0;//~(nordb_FreeMark<<bit_shift);
+  	uint8_t data = 0;
 	hw->ReadBuffer(hw->Param,SecNumber*hw->SectorSize + ByteAddress,&data,1);
   	data &= ~(nordb_FreeMark<<bit_shift);
 	data |= nordb_ReadMark << bit_shift;
