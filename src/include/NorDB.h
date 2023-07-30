@@ -26,7 +26,6 @@ typedef struct
 	uint16_t LastReadSector;
 
 	void 	*Param;
-	void 	(*Erase)(void*Param);
 	void 	(*SectorErace)(void*Param,uint32_t address);
 	void 	(*WriteBuffer)(void*Param,uint32_t address,uint8_t *data,uint16_t len);
 	void    (*ReadBuffer)(void*Param,uint32_t address,uint8_t *data,uint16_t len);

@@ -154,7 +154,6 @@ NorDB_HWLayer *Filell_Init(char *path,uint16_t SectorSize,uint16_t TotalSector)
 	Filehw->SectorSize 		= SectorSize;
 	Filehw->SectorNumber	= TotalSector;
 	Filehw->Param			= Filesw;
-	Filehw->Erase 			= Filell_Erase;
 	Filehw->SectorErace		= Filell_SectorErace;
 	Filehw->WriteBuffer		= Filell_WriteBuffer;
 	Filehw->ReadBuffer		= Filell_ReadBuffer;

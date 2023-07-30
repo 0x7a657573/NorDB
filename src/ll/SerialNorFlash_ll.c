@@ -161,17 +161,6 @@ void FLASH_EraseSector(void *Param,uint32_t SectorAddr)
 	NorDB_sem_Unlock(&spi->xSemaphore);
 }
 
-void FLASH_Erase(void*Param)
-{
-	FlashDev_t *FL =(FlashDev_t*) Param; 
-	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
-
-	for(uint32_t i=0;i<FL->Total_Size;i+=spi->DevOnBus->SectorSize)
-	{
-		FLASH_EraseSector(Param,i);
-	}
-}
-
 void FLASH_ReadBuffer(void*Param, uint32_t ReadAddr, uint8_t *pBuffer,  uint16_t NumByteToRead)
 {
 	FlashDev_t *FL =(FlashDev_t*) Param; 
@@ -346,7 +335,6 @@ NorDB_HWLayer *FlashDB_Init(uint16_t StartSector,uint16_t TotalSector,SpiBus_t *
 	FlashLL->SectorSize 	= FL->SectorSize;
 	FlashLL->SectorNumber	= TotalSector;
 	FlashLL->Param			= FL;
-	FlashLL->Erase 			= FLASH_Erase;
 	FlashLL->SectorErace	= FLASH_EraseSector;
 	FlashLL->WriteBuffer	= FLASH_WriteBuffer;
 	FlashLL->ReadBuffer		= FLASH_ReadBuffer;

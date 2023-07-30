@@ -7,13 +7,6 @@
 
 #include "ll/Ram_ll.h"
 
-void RAMll_Erase(void *Param)
-{
-	Ramll_t *ptr = Param;
-
-	nordb_memset(ptr->Buffer,0xFF,ptr->Total_Size);
-}
-
 void RAMll_SectorErace(void*Param,uint32_t address)
 {
 	Ramll_t *ptr = Param;
@@ -93,7 +86,6 @@ NorDB_HWLayer *Ramll_Init(uint16_t SectorSize,uint16_t TotalSector)
 	Ramhw->SectorSize 		= SectorSize;
 	Ramhw->SectorNumber		= TotalSector;
 	Ramhw->Param			= Ramsw;
-	Ramhw->Erase 			= RAMll_Erase;
 	Ramhw->SectorErace		= RAMll_SectorErace;
 	Ramhw->WriteBuffer		= RAMll_WriteBuffer;
 	Ramhw->ReadBuffer		= RAMll_ReadBuffer;
