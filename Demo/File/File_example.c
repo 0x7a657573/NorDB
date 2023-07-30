@@ -30,7 +30,7 @@ int main(void)
 	dummy_t temp;
 	srand(time(NULL));
 
-	NorDB_HWLayer *File_Hw = Filell_Init("Nor.db",4096,2);	
+	NorDB_HWLayer *File_Hw = Filell_Init("Nor.db",4096,4);	
 	NorDB_t *DB = NorDB(File_Hw,sizeof(dummy_t));
 
 	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
