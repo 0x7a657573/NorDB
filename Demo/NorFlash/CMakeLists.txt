@@ -15,7 +15,7 @@ set(INC_FILES
 )
 
 set(PROJECT_NAME
-    SPI_ex
+    NorFlash_ex
 )
 
 set(LIBRARY_NAME
