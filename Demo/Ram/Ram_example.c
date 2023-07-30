@@ -31,7 +31,7 @@ int main(void)
 	dummy_t temp;
 	srand(time(NULL));
 
-	NorDB_HWLayer *Ram_Hw = Ramll_Init(512, 4);	
+	NorDB_HWLayer *Ram_Hw = Ramll_Init(4096, 4);	
 	NorDB_t *DB = NorDB(Ram_Hw,sizeof(dummy_t));
 
 	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
