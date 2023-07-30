@@ -18,383 +18,343 @@
 
 #include "ll/SerialNorFlash_ll.h"
 
-// SF_t SF;
+#define debug_info 	//printf
 
-
-void SF_WaitForWriteEnd(SpiFlashll_Driver *SpiHw)
+bool Searching_ForDevice(SpiBus_t *spi)
 {
-    SpiHw->SpiChipSelect(0,true);
-    uint8_t wait_arg = 0x05;
-    SpiHw->SpiWrite(&wait_arg, 1);
-    
-    uint8_t status_reg_send = 0xA5;
-    uint8_t status_reg_recive = 0xff;
-    do
-    {
-        SpiHw->SpiStream(&status_reg_send ,&status_reg_recive, 1);
-        SpiHw->SF.StatusRegister1 = status_reg_recive;
-        
-    }while( (SpiHw->SF.StatusRegister1 & 0x01) == 0x01);
-    SpiHw->SpiChipSelect(1, true);
-}
-
-
-void SF_WriteEnable(SpiFlashll_Driver *SpiHw)
-{
-    SpiHw->SpiChipSelect(0,true);
-    uint8_t write_en = 0x06;
-    SpiHw->SpiWrite(&write_en, 1);
-    SpiHw->SpiChipSelect(1,true);
-}
-
-void SF_Writedisable(SpiFlashll_Driver *SpiHw)
-{
-    SpiHw->SpiChipSelect(0,true);
-    uint8_t write_en = 0x04;
-    SpiHw->SpiWrite(&write_en, 1);
-    SpiHw->SpiChipSelect(1,true);
-}
-
-void SP_Read_Manifacture_Device_ID(SpiFlashll_Driver *SpiHw)
-{
-    uint32_t Temp = 0;
-    uint8_t  Temp0 = 0, Temp1 = 0, Temp2 = 0;
-
-    SpiHw->SpiChipSelect(0, true);
-
-    uint8_t send = 0x9F;
-    SpiHw->SpiWrite(&send, 1);
-
-    uint8_t dummy_byte = 0xA5;
-    SpiHw->SpiStream(&Temp0, &dummy_byte, 1);
-    SpiHw->SpiStream(&Temp1, &dummy_byte, 1);
-    SpiHw->SpiStream(&Temp2, &dummy_byte, 1);
-    Temp = (Temp0 << 16) | (Temp1 << 8) | Temp2;
-
-    SpiHw->SpiChipSelect(1, true);
-
-    printf("devic id: %u \n", Temp);
-
-    SpiHw->SF.PageSize = 256;
-	SpiHw->SF.SectorSize = 0x1000;
-    SpiHw->SF.BlockCount = 128;
-	SpiHw->SF.SectorCount = SpiHw->SF.BlockCount * 16;
-	SpiHw->SF.PageCount = (SpiHw->SF.SectorCount * SpiHw->SF.SectorSize) / SpiHw->SF.PageSize;
-	SpiHw->SF.BlockSize = SpiHw->SF.SectorSize * 16;
-	SpiHw->SF.CapacityInKiloByte = (SpiHw->SF.SectorCount * SpiHw->SF.SectorSize) / 1024;
-
-    printf("SF Page Size: %d Bytes\r\n", SpiHw->SF.PageSize);
-	printf("SF Page Count: %d\r\n", SpiHw->SF.PageCount);
-	printf("SF Sector Size: %d Bytes\r\n", SpiHw->SF.SectorSize);
-	printf("SF Sector Count: %d\r\n", SpiHw->SF.SectorCount);
-	printf("SF Block Size: %d Bytes\r\n", SpiHw->SF.BlockSize);
-	printf("SF Block Count: %d\r\n", SpiHw->SF.BlockCount);
-	printf("SF Capacity: %d KiloBytes\r\n", SpiHw->SF.CapacityInKiloByte);
-	printf("SF Init Done\r\n");
-}
-
-void SF_EraseChip(SpiFlashll_Driver *SpiHw)
-{
-	SF_WriteEnable(SpiHw);
-    SpiHw->SpiChipSelect(0,true);
-
-    uint8_t write = 0xc7;
-    SpiHw->SpiWrite(&write, 1);
-
-    SpiHw->SpiChipSelect(1, true);
-    SF_WaitForWriteEnd(SpiHw);
-	SF_Writedisable(SpiHw);
-}
-
-
-void SF_EraseSector(SpiFlashll_Driver *SpiHw, uint32_t SectorAddress)
-{
-	SF_WriteEnable(SpiHw);
-    SpiHw->SpiChipSelect(0,true);
-
-    uint8_t write = 0x20;
-    SpiHw->SpiWrite(&write, 1);
-    write = (SectorAddress & 0xFF0000) >> 16;
-    SpiHw->SpiWrite(&write, 1);
-    write = (SectorAddress & 0xFF00) >> 8;
-    SpiHw->SpiWrite(&write, 1);
-    write = (SectorAddress & 0xFF);
-    SpiHw->SpiWrite(&write, 1);
-
-    SpiHw->SpiChipSelect(1, true);
-    SF_WaitForWriteEnd(SpiHw);
-	SF_Writedisable(SpiHw);
-}
-
-
-void SF_WriteByte(SpiFlashll_Driver *SpiHw, uint8_t pBuffer, uint32_t WriteAddr_inBytes)
-{
-	SF_WriteEnable(SpiHw);
-    SpiHw->SpiChipSelect(0,true);
-
-    uint8_t buff[10];
-    uint32_t index = 0;
-
-    uint8_t write_arg = 0x02;
-    buff[index++] = 0x02;
-
-    buff[index++] = ((WriteAddr_inBytes & 0xff0000) >> 16);
-    buff[index++] = ((WriteAddr_inBytes & 0xff00) >> 8);
-    buff[index++] = ((WriteAddr_inBytes & 0xff));
-
-    buff[index++]= pBuffer;
-    
-    SpiHw->SpiWrite(buff,index);
-    
-    SpiHw->SpiChipSelect(1, true);
-    SF_WaitForWriteEnd(SpiHw);
-    SF_Writedisable(SpiHw);
-}
-
-void SF_WriteMoreByte(SpiFlashll_Driver *SpiHw, uint8_t *send, uint32_t WriteAddr_inBytes, uint32_t len)
-{
-    SF_WriteEnable(SpiHw);
-    SpiHw->SpiChipSelect(0,true);
-
-    uint8_t buff[len+4];
-    uint32_t index = 0;
-
-    uint8_t write_arg = 0x02;
-    buff[index++] = 0x02;
-
-    buff[index++] = ((WriteAddr_inBytes & 0xff0000) >> 16);
-    buff[index++] = ((WriteAddr_inBytes & 0xff00) >> 8);
-    buff[index++] = ((WriteAddr_inBytes & 0xff));
-
-    for(int i=0; i<len; i++)
-        buff[index++]= send[i];
-    
-    SpiHw->SpiWrite(buff,index);
-    
-    SpiHw->SpiChipSelect(1, true);
-    SF_WaitForWriteEnd(SpiHw);
-    SF_Writedisable(SpiHw);
-}
-
-void SF_Write(SpiFlashll_Driver *SpiHw, uint8_t *send, uint32_t len, uint32_t WriteAddr_inBytes)                      //my write func
-{                                   
-    int test1 = (WriteAddr_inBytes >> 8);
-    int test2 = ((WriteAddr_inBytes + len) >> 8) ;
-
-    int end_of_first_page = (WriteAddr_inBytes & 0x7FFF00) + 0xFF;
-    int len_in_first_page = end_of_first_page - WriteAddr_inBytes+1;
-    int num_of_full_page = (len - len_in_first_page)/256;
-    int len_in_last_page = len - ( num_of_full_page*256 + len_in_first_page);
-    int Addr_of_next_page;
-
-    if (test1 == test2)
-    {
-        SF_WriteMoreByte(SpiHw, send, WriteAddr_inBytes, len);
-    }
-    else
-    {
-        SF_WriteMoreByte(SpiHw, send, WriteAddr_inBytes, len_in_first_page);
-        Addr_of_next_page = end_of_first_page + 1;
-        send += len_in_first_page;
-
-        for( ; 0<num_of_full_page; num_of_full_page--)
-        {
-            SF_WriteMoreByte(SpiHw, send,  Addr_of_next_page, 256);
-            Addr_of_next_page += 256;
-            send += 256;
-
-        }
-
-        if( len_in_last_page != 0)
-            SF_WriteMoreByte(SpiHw, send, Addr_of_next_page, len_in_last_page);
-    }
-}
-
-
-void SF_ReadByte(SpiFlashll_Driver *SpiHw, uint8_t *pBuffer, uint32_t ReadAddr)
-{
-    SpiHw->SpiChipSelect(0, true);
-
-    uint8_t buff[10];
-    uint8_t index = 0;
-    uint8_t read_arg = 0x0B;
-    uint8_t zero = 0;
-    uint8_t dummy = 0XA5;
-
-
-    buff[index++] = read_arg;
-    buff[index++] = ((ReadAddr & 0xff0000) >> 16);
-    buff[index++] = ((ReadAddr & 0xff00) >> 8);
-    buff[index++] = ((ReadAddr & 0xff));
-    buff[index++] = zero;
-        
-    SpiHw->SpiWrite(buff, index);
-    SpiHw->SpiStream(&dummy, pBuffer, 1);
-
-    SpiHw->SpiChipSelect(1, true);
-    SF_WaitForWriteEnd(SpiHw);
-}
-
-void SF_ReadMoreByte(SpiFlashll_Driver *SpiHw, uint8_t *recive, uint32_t len, uint32_t ReadAddr_inBytes)
-{
-    SpiHw->SpiChipSelect(0, true);
-
-    uint8_t buff[10];
-    uint8_t index = 0;
-    uint8_t read_arg = 0x0B;
-    uint8_t zero = 0;
-    uint8_t dummy[len];
-
-    memset(dummy, 0xA5, len*(sizeof(uint8_t)) );
-
-    buff[index++] = read_arg;
-    buff[index++] = ((ReadAddr_inBytes & 0xff0000) >> 16);
-    buff[index++] = ((ReadAddr_inBytes & 0xff00) >> 8);
-    buff[index++] = ((ReadAddr_inBytes & 0xff));
-    buff[index++] = zero;
-        
-    SpiHw->SpiWrite(buff, index);
-    SpiHw->SpiStream(dummy, recive, len);
-
-    SpiHw->SpiChipSelect(1, true);
-    SF_WaitForWriteEnd(SpiHw);
-}
-
-void SF_Read(SpiFlashll_Driver *SpiHw, uint8_t *recive, uint32_t len, uint32_t ReadAddr_inBytes)
-{
-    int test1 = (ReadAddr_inBytes >> 8);
-    int test2 = ((ReadAddr_inBytes + len) >> 8) ;
-
-    int end_of_first_page = (ReadAddr_inBytes & 0x7FFF00) + 0xFF;
-    int len_in_first_page = end_of_first_page - ReadAddr_inBytes+1;
-    int num_of_full_page = (len - len_in_first_page)/256;
-    int len_in_last_page = len - ( num_of_full_page*256 + len_in_first_page);
-    int Addr_of_next_page;
-
-     if (test1 == test2)
-    {
-        SF_ReadMoreByte(SpiHw, recive, len, ReadAddr_inBytes);
-    }
-    else
-    {
-        SF_ReadMoreByte(SpiHw, recive, len_in_first_page, ReadAddr_inBytes);
-        Addr_of_next_page = end_of_first_page + 1;
-        recive += len_in_first_page;
-
-        for( ; 0<num_of_full_page; num_of_full_page--)
-        {
-            SF_ReadMoreByte(SpiHw, recive, 256,  Addr_of_next_page);
-            Addr_of_next_page += 256;
-            recive += 256;
-
-        }
-
-        if( len_in_last_page != 0)
-            SF_ReadMoreByte(SpiHw, recive, len_in_last_page, Addr_of_next_page);
-    }
-}
-
-
-void SPIFlashll_Erase(void *Param)
-{
-	SpiFlashll_Driver *ptr = Param;
-
-    SF_EraseChip(ptr);
-}
-
-void SPIFlashll_SectorErase(void *Param, uint32_t address)
-{
-	SpiFlashll_Driver *ptr = Param;
-
-    uint16_t Sector_Number  = address / ((SpiFlashll_t*)ptr->Param)->Sector_Size;
-	if(Sector_Number < ((SpiFlashll_t*)ptr->Param)->Total_Sector)
-        SF_EraseSector(ptr, address);
-}
-
-void SPIFlashll_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
-{
-	SpiFlashll_Driver *ptr = Param;
-
-	if((address+len) < ((SpiFlashll_t*)ptr->Param)->Total_Size)
+	uint8_t wr_buff[32]={0x9f};
+    uint8_t rd_buff[32]={0xff};
+	spi->SPI_WriteRead(spi->param,wr_buff,1,rd_buff,3);
+	spi->DevOnBus->JEDECID = (rd_buff[0] << 16) | (rd_buff[1] << 8) | rd_buff[2]; //JEDEC ID
+	
+	switch (spi->DevOnBus->JEDECID & 0x000000FF)
 	{
-        SF_Write(ptr, data, len, address);
+	case 0x20: // 	w25q512
+		spi->DevOnBus->ID = W25Q512;
+		spi->DevOnBus->BlockCount = 1024;
+		debug_info("w25qxx Chip: w25q512\r\n");
+		break;
+	case 0x19: // 	w25q256
+		spi->DevOnBus->ID = W25Q256;
+		spi->DevOnBus->BlockCount = 512;
+		debug_info("w25qxx Chip: w25q256\r\n");
+		break;
+	case 0x18: // 	w25q128
+		spi->DevOnBus->ID = W25Q128;
+		spi->DevOnBus->BlockCount = 256;
+		debug_info("w25qxx Chip: w25q128\r\n");
+		break;
+	case 0x17: //	w25q64
+		spi->DevOnBus->ID = W25Q64;
+		spi->DevOnBus->BlockCount = 128;
+		debug_info("w25qxx Chip: w25q64\r\n");
+		break;
+	case 0x16: //	w25q32
+		spi->DevOnBus->ID = W25Q32;
+		spi->DevOnBus->BlockCount = 64;
+		debug_info("w25qxx Chip: w25q32\r\n");
+		break;
+	case 0x15: //	w25q16
+		spi->DevOnBus->ID = W25Q16;
+		spi->DevOnBus->BlockCount = 32;
+		debug_info("w25qxx Chip: w25q16\r\n");
+		break;
+	case 0x14: //	w25q80
+		spi->DevOnBus->ID = W25Q80;
+		spi->DevOnBus->BlockCount = 16;
+		debug_info("w25qxx Chip: w25q80\r\n");
+		break;
+	case 0x13: //	w25q40
+		spi->DevOnBus->ID = W25Q40;
+		spi->DevOnBus->BlockCount = 8;
+		debug_info("w25qxx Chip: w25q40\r\n");
+		break;
+	case 0x12: //	w25q20
+		spi->DevOnBus->ID = W25Q20;
+		spi->DevOnBus->BlockCount = 4;
+		debug_info("w25qxx Chip: w25q20\r\n");
+		break;
+	case 0x11: //	w25q10
+		spi->DevOnBus->ID = W25Q10;
+		spi->DevOnBus->BlockCount = 2;
+		debug_info("w25qxx Chip: w25q10\r\n");
+		break;
+	default:
+		spi->DevOnBus->ID = UnkownFlash;
+		debug_info("w25qxx Unknown ID\r\n");
+		return false;
+	}
+
+	spi->DevOnBus->PageSize = 256;
+	spi->DevOnBus->SectorSize = 0x1000;
+	spi->DevOnBus->SectorCount = spi->DevOnBus->BlockCount * 16;
+	spi->DevOnBus->PageCount = (spi->DevOnBus->SectorCount * spi->DevOnBus->SectorSize) / spi->DevOnBus->PageSize;
+	spi->DevOnBus->BlockSize = spi->DevOnBus->SectorSize * 16;
+	
+	debug_info("Flash Page Size: %d Bytes\r\n", spi->DevOnBus->PageSize);
+	debug_info("Flash Page Count: %d\r\n", spi->DevOnBus->PageCount);
+	debug_info("Flash Sector Size: %d Bytes\r\n", spi->DevOnBus->SectorSize);
+	debug_info("Flash Sector Count: %d\r\n", spi->DevOnBus->SectorCount);
+	debug_info("Flash Block Size: %d Bytes\r\n", spi->DevOnBus->BlockSize);
+	debug_info("Flash Block Count: %d\r\n", spi->DevOnBus->BlockCount);
+	debug_info("Flash Init Done\r\n");
+	return true;
+}
+
+void FLASH_WriteEnable(void *Param)
+{
+	FlashDev_t *FL =(FlashDev_t*) Param; 
+	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+	//debug_info("w25qxx Write Enable\r\n");
+	uint8_t  cmd[8] = {0};
+	cmd[0] = 0x06;
+	spi->SPI_WriteRead(spi->param,cmd,1,NULL,0);
+}
+
+void FLASH_WaitForWriteEnd(void *Param)
+{
+	FlashDev_t *FL =(FlashDev_t*) Param; 
+	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+	uint8_t  StatusRegister1 = 0;
+	uint8_t  cmd[8] = {0};
+	cmd[0] = 0x05;
+
+	//debug_info("w25qxx wait for flash ready\r\n");
+	do
+	{
+		spi->SPI_WriteRead(spi->param,cmd,1,&StatusRegister1,1);
+	} while ((StatusRegister1 & 0x01) == 0x01);
+}
+
+void FLASH_EraseSector(void *Param,uint32_t SectorAddr)
+{
+	FlashDev_t *FL =(FlashDev_t*) Param; 
+	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+	NorDB_sem_Lock(&spi->xSemaphore);
+	debug_info("w25qxx EraseSector %d Begin...\r\n", SectorAddr);
+	
+	FLASH_WaitForWriteEnd(Param);
+	FLASH_WriteEnable(Param);
+
+	uint8_t  cmd[8] = {0};
+	uint32_t i = 0;
+	
+	if (spi->DevOnBus->ID >= W25Q256)
+	{
+		cmd[i++] = (0x21);
+		cmd[i++] = ((SectorAddr & 0xFF000000) >> 24);
+	}
+	else
+	{
+		cmd[i++] = (0x20);
+	}
+	cmd[i++] = ((SectorAddr & 0xFF0000) >> 16);
+	cmd[i++] = ((SectorAddr & 0xFF00) >> 8);
+	cmd[i++] = (SectorAddr & 0xFF);
+	spi->SPI_WriteRead(spi->param,cmd,i,NULL,0);
+	
+	FLASH_WaitForWriteEnd(Param);
+
+	debug_info("w25qxx EraseSector done.\r\n");
+	NorDB_sem_Unlock(&spi->xSemaphore);
+}
+
+void FLASH_Erase(void*Param)
+{
+	FlashDev_t *FL =(FlashDev_t*) Param; 
+	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+
+	for(uint32_t i=FL->StartOffset;i<(FL->StartOffset+FL->Total_Size);i+=spi->DevOnBus->SectorSize)
+	{
+		FLASH_EraseSector(Param,i);
 	}
 }
 
-void SPIFlashll_ReadBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
+void FLASH_ReadBuffer(void*Param, uint32_t ReadAddr, uint8_t *pBuffer,  uint16_t NumByteToRead)
 {
-	SpiFlashll_Driver *ptr = Param;
+	FlashDev_t *FL =(FlashDev_t*) Param; 
+	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+	NorDB_sem_Lock(&spi->xSemaphore);
+	debug_info("w25qxx ReadBytes at Address:%d, %d Bytes\r\n", ReadAddr, NumByteToRead);
 
-	if((address+len) < ((SpiFlashll_t*)ptr->Param)->Total_Size)
+	uint32_t Index = 0;
+	uint8_t  cmd[8] = {0};
+	if (spi->DevOnBus->ID >= W25Q256)
 	{
-        SF_Read(ptr, data, len, address);
+		cmd[Index++] = 0x0C;
+		cmd[Index++] = ((ReadAddr & 0xFF000000) >> 24);
 	}
+	else
+	{
+		cmd[Index++] = (0x0B);
+	}
+	cmd[Index++] = ((ReadAddr & 0xFF0000) >> 16);
+	cmd[Index++] = ((ReadAddr & 0xFF00) >> 8);
+	cmd[Index++] = (ReadAddr & 0xFF);
+	cmd[Index++] = (0);
+	spi->SPI_WriteRead(spi->param,cmd,Index,pBuffer,NumByteToRead);
+	NorDB_sem_Unlock(&spi->xSemaphore);
 }
 
-uint8_t SPIFlashll_flashCheck(void*Param)
+void FLASH_WritePage(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
-	return 1;
+	FlashDev_t *FL =(FlashDev_t*) Param; 
+	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+
+	FLASH_WriteEnable(Param);
+	
+	uint8_t cmd[512] = {0};
+	uint32_t i = 0;
+
+	if (spi->DevOnBus->ID >= W25Q256)
+	{
+		cmd[i++] = (0x12);
+		cmd[i++] = ((address & 0xFF000000) >> 24);
+	}
+	else
+	{
+		cmd[i++] = (0x02);
+	}
+	cmd[i++] = ((address & 0xFF0000) >> 16);
+	cmd[i++] = ((address & 0xFF00) >> 8);
+	cmd[i++] = (address & 0xFF);
+
+	for(int j=0;j<len;j++)
+		cmd[i++] = data[j];
+
+	spi->SPI_WriteRead(spi->param,cmd,i,NULL,0);
+	
+	FLASH_WaitForWriteEnd(Param);
 }
 
-const char *SPIFlashll_DriverName(void*Param)
+void FLASH_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
-	static const char DName[] = "RamDB";
+	FlashDev_t *FL =(FlashDev_t*) Param; 
+	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+	uint32_t page_size = spi->DevOnBus->PageSize;
+
+	NorDB_sem_Lock(&spi->xSemaphore);	
+	debug_info("w25qxx Write at Address:%d, %d Bytes\r\n", address, len);
+
+    uint32_t start_page_offset = address % page_size;
+    uint32_t start_page = address / page_size;
+    uint32_t start_page_wbyte = (len+start_page_offset)<page_size ?  len:(page_size - (address - (start_page*page_size)));
+    uint32_t remaining_byte = len - start_page_wbyte;
+    uint32_t complete_page = remaining_byte / page_size;
+    uint32_t Offset_end_Page = remaining_byte % page_size;
+    
+	uint8_t *dptr = data;
+    if(start_page_wbyte)
+    {
+        debug_info("Write %i Byte in page %i from adr %i\r\n",start_page_wbyte, start_page,start_page_offset);
+		FLASH_WritePage(Param,start_page * page_size + start_page_offset,dptr, start_page_wbyte);
+		dptr+=start_page_wbyte;
+    }
+    
+    for(int i=0;i<complete_page;i++)
+    {
+        debug_info("Write page(255 byte) in page %i\r\n",start_page+1+i);
+		FLASH_WritePage(Param,(start_page+1+i) * page_size ,dptr, page_size);
+		dptr+=page_size;
+    }
+    
+    if(Offset_end_Page)
+    {
+        debug_info("Write %i Byte in page %i\r\n",Offset_end_Page,start_page+1+complete_page);
+		FLASH_WritePage(Param,(start_page+1+complete_page) * page_size ,dptr, Offset_end_Page);
+    }
+
+	debug_info("w25qxx Write done.\r\n");
+	NorDB_sem_Unlock(&spi->xSemaphore);
+}
+
+uint8_t FLASH_flashCheck(void*Param)
+{	
+	FlashDev_t *FL =(FlashDev_t*) Param; 
+	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+	SpiDev_t  *dev = spi->DevOnBus;
+
+	return dev->ID != UnkownFlash;
+}
+
+const char *FLASH_DriverName(void*Param)
+{
+	static const char DName[] = "eFlash";
 	return DName;
 }
 
-
-NorDB_HWLayer *SpiFlashll_Init(SpiFlashll_Driver *SpiHw,uint16_t SectorSize,uint16_t TotalSector)
+NorDB_HWLayer *FlashDB_Init(uint16_t StartSector,uint16_t TotalSector,SpiBus_t *spi)
 {
-    NorDB_HWLayer *SpiFlashHw = nordb_malloc(sizeof(NorDB_HWLayer));
-    memset(SpiFlashHw, 0, sizeof(NorDB_HWLayer));
-	if(SpiFlashHw==NULL)	return NULL;
-    if(SpiHw==NULL)	return NULL;
+	if(!spi) return NULL;
 
-	uint32_t total_Size = TotalSector *  SectorSize;
-	SpiFlashll_t *SpiFlashSw = nordb_malloc(sizeof(SpiFlashll_t));
+	NorDB_HWLayer *FlashLL = nordb_malloc(sizeof(NorDB_HWLayer));
+	if(FlashLL==NULL)	return NULL;
 
-	if(SpiFlashSw==NULL)
+	/*Check Device on Bus*/
+	if(!spi->DevOnBus)
 	{
-		nordb_free(SpiFlashSw);
-		return NULL;
-	}
+		/*Searching bus for Flash Device*/
+		spi->DevOnBus = nordb_malloc(sizeof(SpiDev_t));
+		if(!spi->DevOnBus)
+		{
+			nordb_free(FlashLL);
+			return NULL;
+		}
 
-	SpiFlashSw->Sector_Size = SectorSize;
-	SpiFlashSw->Total_Sector = TotalSector;
-	SpiFlashSw->Total_Size	= total_Size;
-	SpiFlashSw->Buffer = nordb_malloc(total_Size);
+		/*init Semaphore*/
+		if(!NorDB_sem_init(&spi->xSemaphore))
+		{
+			Flashll_Del(FlashLL);
+			return NULL;
+		}
 
-	if(SpiFlashSw->Buffer==NULL)
+		if(!Searching_ForDevice(spi))
+		{
+			Flashll_Del(FlashLL);
+			nordb_free(spi->DevOnBus);
+			return NULL;
+		}
+	}	
+
+
+	FlashDev_t *FL = nordb_malloc(sizeof(FlashDev_t));
+	if(FL==NULL)
 	{
-		nordb_free(SpiFlashSw);
-		nordb_free(SpiFlashSw);
+		nordb_free(FlashLL);
 		return NULL;
 	}
 
 	/*init sema*/
-	if(!NorDB_sem_init(&SpiFlashHw->sema))
+	if(!NorDB_sem_init(&FlashLL->sema))
 	{
-		SpiFlash_Del(SpiFlashHw);
+		Flashll_Del(FlashLL);
 		return NULL;
 	}
+	FL->SectorSize  = spi->DevOnBus->SectorSize;
+	FL->SPI 	    = spi;
+	FL->StartOffset = StartSector * FL->SectorSize;
+	FL->Total_Size  = FL->SectorSize * TotalSector;
 
-	SpiFlashHw->SectorSize 		= SectorSize;
-	SpiFlashHw->SectorNumber	= TotalSector;
-	SpiFlashHw->Param			= SpiHw;
-	SpiFlashHw->Erase 			= SPIFlashll_Erase;
-	SpiFlashHw->SectorErace		= SPIFlashll_SectorErase;
-	SpiFlashHw->WriteBuffer		= SPIFlashll_WriteBuffer;
-	SpiFlashHw->ReadBuffer		= SPIFlashll_ReadBuffer;
-	SpiFlashHw->DriverCheck		= SPIFlashll_flashCheck;
-	SpiFlashHw->DriverName		= SPIFlashll_DriverName;
+	FlashLL->SectorSize 	= FL->SectorSize;
+	FlashLL->SectorNumber	= TotalSector;
+	FlashLL->Param			= FL;
+	FlashLL->Erase 			= FLASH_Erase;
+	FlashLL->SectorErace	= FLASH_EraseSector;
+	FlashLL->WriteBuffer	= FLASH_WriteBuffer;
+	FlashLL->ReadBuffer		= FLASH_ReadBuffer;
+	FlashLL->DriverCheck	= FLASH_flashCheck;
+	FlashLL->DriverName		= FLASH_DriverName;
 
-	return SpiFlashHw;
+	return FlashLL;
 }
 
-void SpiFlash_Del(NorDB_HWLayer *db)
+void Flashll_Del(NorDB_HWLayer *db)
 {
-	nordb_free((((SpiFlashll_Driver*)db->Param)->Param->Buffer));
-	nordb_free(db->Param);
+	FlashDev_t *FL =(FlashDev_t*) db->Param; 
+	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+
+	nordb_free(spi->DevOnBus);
+	nordb_free(FL);
 	nordb_free(db);
 }
 
