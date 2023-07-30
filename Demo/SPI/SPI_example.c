@@ -329,20 +329,26 @@ bool OverWrite_Test(NorDB_t *DB)
 	return true;
 }
 
-
+void xSPI_WriteRead(void *param,uint8_t *out,uint16_t wlen,uint8_t *in,uint16_t rlen)
+{
+	CH341ChipSelect(0, true);
+	CH341WriteSPI(out, wlen);
+	CH341ReadSPI(in, rlen);
+	CH341ChipSelect(0, false);
+}
 
 int spiFlashTest(void)
 {
+	SpiBus_t xSPI;
+	void (*SPI_WriteRead)(void *param,uint8_t *out,uint16_t wlen,uint8_t *in,uint16_t rlen);
+	xSPI.param = NULL;
+	xSPI.DevOnBus = NULL;
+	xSPI.SPI_WriteRead = xSPI_WriteRead;
+	NorDB_HWLayer *Flash_HW = FlashDB_Init(0, 4,&xSPI);
+			
 	dummy_t temp;
 	srand(time(NULL));
 	
-	SpiFlashll_Driver *SpiDriver = nordb_malloc(sizeof(SpiFlashll_Driver));
-	SpiDriver->SpiChipSelect = CH341ChipSelect;
-	SpiDriver->SpiRead = &CH341ReadSPI;
-	SpiDriver->SpiStream = &CH341StreamSPI;
-	SpiDriver->SpiWrite = &CH341WriteSPI;
-
-	NorDB_HWLayer *Flash_HW = SpiFlashll_Init(SpiDriver, 4096, 4);
 	NorDB_t *DB = NorDB(Flash_HW,sizeof(dummy_t));
 	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
 	uint32_t Sector_Number = DB->DB_ll->SectorNumber;
@@ -367,7 +373,7 @@ int spiFlashTest(void)
 	if(!FullFill_Tetst(DB))
 	{
 		printf("Fill Test Not Complete\n");
-		SpiFlash_Del(Flash_HW);
+		Flashll_Del(Flash_HW);
 		return EXIT_FAILURE;
 	}
 
@@ -375,7 +381,7 @@ int spiFlashTest(void)
 	if(!RoundRobin_Test(DB))
 	{
 		printf("Round Robin Test Not Complete\n");
-		SpiFlash_Del(Flash_HW);
+		Flashll_Del(Flash_HW);
 		return EXIT_FAILURE;
 	}
 
@@ -383,10 +389,10 @@ int spiFlashTest(void)
 	if(!OverWrite_Test(DB))
 	{
 		printf("Over Write Test Not Complete\n");
-		SpiFlash_Del(Flash_HW);
+		Flashll_Del(Flash_HW);
 		return EXIT_FAILURE;
 	}
 
-	SpiFlash_Del(Flash_HW);
+	Flashll_Del(Flash_HW);
 }
 
