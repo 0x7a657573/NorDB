@@ -184,7 +184,8 @@ void NorDB_SyncData(NorDB_t *db)
 	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
 	hw->SyncCounter = 0;
 	uint32_t LastRead = UINT32_MAX;
-
+	hw->LastWriteSector = 0;
+	hw->LastReadSector =0;
 	for(uint32_t i=0; i< db->DB_ll->SectorNumber; i++)
 	{
 		/*read header*/
