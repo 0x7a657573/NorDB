@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5.0)
+cmake_minimum_required(VERSION 3.22)
 
 set(SOURCE
     SPI_example.c
@@ -7,11 +7,14 @@ set(SOURCE
     ../../src/ll/SerialNorFlash_ll.c
     CH341/ch341.c
     CH341/stdafx.c
+    ../Tests/src/TestRoutines.c
+    ../Tests/src/TestConfig.c
 )
 
 set(INC_FILES
     ../../src/include
     CH341
+    ../Tests/inc/
 )
 
 set(PROJECT_NAME

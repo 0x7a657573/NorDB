@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5.0)
+cmake_minimum_required(VERSION 3.22)
 
 
 set(SOURCE
@@ -6,10 +6,13 @@ set(SOURCE
     ../../src/NorDB.c
     ../../src/sem_ll.c
     ../../src/ll/Ram_ll.c
+    ../Tests/src/TestRoutines.c
+    ../Tests/src/TestConfig.c
 )
 
 set(INC_FILES
     ../../src/include
+    ../Tests/inc/
 )
 
 set(PROJECT_NAME
