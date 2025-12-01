@@ -391,9 +391,81 @@ bool DeleteDB_Test(NorDB_t *DB, char *name, int count)
 	end = GetTime();
     time_spent = end - start;
     printf("\tRead  %d records in: %f%cs\n\n", count, time_spent<0.1f?(time_spent*1000.0f):time_spent, time_spent<0.1f?'m':0);
+	
+	memcpy(DB, NewDB, sizeof(NorDB_t));
 	free(NewDB);
 	return true;
 }
+
+bool Erase_Test(NorDB_t *DB, char *name, int count)
+{
+    dummy_t temp;
+    strcpy(name, "Erase");
+
+    printf("--->NorDB Erase Test\n");
+
+    // 1. Fill the database with some records
+    printf("\tAdding %d records to the database...\n", count);
+    for (int i = 0; i < count; i++)
+    {
+        get_RandomRecord(&temp);
+        if (NorDB_AddRecord(DB, &temp) == 0)
+        {
+            printf("\tError adding record %d\n", i);
+            return false;
+        }
+    }
+
+    uint32_t records_before_erase = NorDB_Get_TotalUnreadRecord(DB);
+    printf("\tRecords in DB before erase: %d\n", records_before_erase);
+
+    if (records_before_erase != count)
+    {
+        printf("\tError: Record count mismatch before erase.\n");
+        return false;
+    }
+
+    // 2. Erase the database
+    printf("\tErasing the database...\n");
+    if (!NorDB_Erase(DB))
+    {
+        printf("\tError erasing the database.\n");
+        return false;
+    }
+    printf("\tErase operation completed.\n");
+
+    // 3. Verify that the database is empty
+    uint32_t records_after_erase = NorDB_Get_TotalUnreadRecord(DB);
+    printf("\tRecords in DB after erase: %d\n", records_after_erase);
+
+    if (records_after_erase != 0)
+    {
+        printf("\tError: Database is not empty after erase.\n");
+        return false;
+    }
+
+    // 4. Verify that the database is still usable
+    printf("\tAdding a new record to verify usability...\n");
+    get_RandomRecord(&temp);
+    if (NorDB_AddRecord(DB, &temp) == 0)
+    {
+        printf("\tError adding a record after erase.\n");
+        return false;
+    }
+
+    uint32_t records_after_add = NorDB_Get_TotalUnreadRecord(DB);
+    printf("\tRecords in DB after adding one more record: %d\n", records_after_add);
+
+    if (records_after_add != 1)
+    {
+        printf("\tError: Could not add a new record after erase.\n");
+        return false;
+    }
+    
+    printf("\tErase test completed successfully :)\n\n");
+    return true;
+}
+
 
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)
 {
@@ -412,7 +484,3 @@ int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)
     printf("Test Execution Time: %f%cs\n\n", time_spent<0.1f?(time_spent*1000.0f):time_spent, time_spent<0.1f?'m':0);
     return 0;
 }
-
-
-
-
