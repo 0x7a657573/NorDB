@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.22)
 
 set(PROJECT_NAME
     NorTest_ex
@@ -28,4 +28,10 @@ set(INC_FILES
 
 add_library(${PROJECT_NAME} STATIC
     ${SRC_FILES}
+)
+
+target_include_directories(${PROJECT_NAME} PUBLIC
+    "inc"
+    "../../src/include"
+    "../NorFlash/CH341/"
 )
