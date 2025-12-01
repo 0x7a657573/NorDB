@@ -345,6 +345,31 @@ void NorDB_Set_Read_Header_In_sector(NorDB_t *db,uint32_t Point_Adr)
   	hw->WriteBuffer(hw->Param,SecNumber*hw->SectorSize + ByteAddress,&data,1);
 }
 
+bool NorDB_Erase(NorDB_t *db)
+{
+	if(db==NULL)
+		return 0;
+	
+	NorDB_HWLayer *hw = db->DB_ll;
+
+	/*lock io*/
+	NorDB_sem_Lock(&hw->sema);
+
+	// Erase Sector one by one
+	for(uint32_t i=0;i<hw->SectorNumber;i++)
+	{
+		hw->SectorErace(hw->Param,i*hw->SectorSize);
+	}
+
+	/*unlock io*/
+	NorDB_sem_Unlock(&hw->sema);
+
+	/*Re calculate static data*/
+	NorDB_SyncData(db);
+
+	return true;
+}
+
 uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
 {
 	if(db==NULL)
