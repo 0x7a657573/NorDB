@@ -74,7 +74,7 @@ NorDB has a layered architecture that separates the core database logic from the
 ```
 
 
-*   **Public API:** The public API provides a set of functions for interacting with the database, such as `NorDB_AddRecord`, `NorDB_ReadRecord`, and `NorDB_Erase`.
+*   **Public API:** The public API provides a set of functions for interacting with the database, such as `NorDB_AddRecord`, `NorDB_ReadRecord`, and `NorDB_Clear`.
 *   **Core Logic:** The core logic implements the main functionality of the database, such as record management, wear-leveling, and data synchronization.
 *   **Hardware Abstraction Layer (HAL):** The HAL provides a generic interface to the underlying storage medium. It consists of a set of function pointers for performing low-level operations, such as `SectorErace`, `WriteBuffer`, and `ReadBuffer`.
 *   **Storage Backends:** NorDB supports multiple storage backends, each of which implements the HAL interface for a specific type of storage medium (e.g., NOR flash, RAM, file).
@@ -176,7 +176,7 @@ The public API is defined in `src/include/NorDB.h`.
     *   `hw`: A pointer to the hardware abstraction layer.
     *   `RecordSize`: The size of a single record.
     *   Returns a pointer to the new database instance, or `NULL` on error.
-*   **`bool NorDB_Erase(NorDB_t *db)`:** Erases the entire database.
+*   **`bool NorDB_Clear(NorDB_t *db)`:** Erases the entire database.
     *   `db`: A pointer to the database instance.
     *   Returns `true` on success, or `false` on error.
 *   **`uint32_t NorDB_AddRecord(NorDB_t *db, void *RecoedData)`:** Adds a new record to the database.
@@ -400,7 +400,7 @@ Functions returning `uint32_t` (record addresses):
 
 Functions returning `bool`:
 - `NorDB_Init_Sector()`: false = invalid sector number
-- `NorDB_Erase()`: always returns true
+- `NorDB_Clear()`: always returns true
 - `NorDB_HwCheck()`: true = operational
 
 **Error Recovery:**
@@ -432,7 +432,7 @@ Functions returning `bool`:
    - Sector scan is atomic
    - Prevents inconsistent state during recovery
 
-4. **`NorDB_Erase()`** (lines 281, 289):
+4. **`NorDB_Clear()`** (lines 281, 289):
    - Mass erase is atomic
 
 **Thread Safety Guarantees:**
@@ -502,7 +502,7 @@ The tests cover the following functionality:
 *   **`OverWrite_Test`:** Tests the overwrite protection of the database.
 *   **`WriteRead_Time_Test`:** Measures the time it takes to write and read a specified number of records.
 *   **`DeleteDB_Test`:** Tests the ability to delete and recreate the database.
-*   **`Erase_Test`:** Tests the `NorDB_Erase` function.
+*   **`Clear_Test`:** Tests the `NorDB_Clear` function.
 
 ## Performance notes + tuning knobs
 

@@ -58,7 +58,7 @@ typedef struct __attribute__((__packed__))
 
 
 NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize);
-bool	 NorDB_Erase(NorDB_t *db);
+bool	 NorDB_Clear(NorDB_t *db);
 uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData);
 uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData);
 uint32_t NorDB_Get_TotalUnreadRecord(NorDB_t *db);

@@ -397,12 +397,12 @@ bool DeleteDB_Test(NorDB_t *DB, char *name, int count)
 	return true;
 }
 
-bool Erase_Test(NorDB_t *DB, char *name, int count)
+bool Clear_Test(NorDB_t *DB, char *name, int count)
 {
     dummy_t temp;
-    strcpy(name, "Erase");
+    strcpy(name, "Clear");
 
-    printf("--->NorDB Erase Test\n");
+    printf("--->NorDB Clear Test\n");
 
     // 1. Fill the database with some records
     printf("\tAdding %d records to the database...\n", count);
@@ -427,7 +427,7 @@ bool Erase_Test(NorDB_t *DB, char *name, int count)
 
     // 2. Erase the database
     printf("\tErasing the database...\n");
-    if (!NorDB_Erase(DB))
+    if (!NorDB_Clear(DB))
     {
         printf("\tError erasing the database.\n");
         return false;
