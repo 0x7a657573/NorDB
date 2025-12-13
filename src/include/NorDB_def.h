@@ -21,8 +21,48 @@
 #define nordb_ReadMark		0b00
 
 /*Log Founction*/
-#define info_log	//printf
-#define err_log
+#define NORDB_LOG_LEVEL_ERROR 1
+#define NORDB_LOG_LEVEL_WARN  2
+#define NORDB_LOG_LEVEL_INFO  3
+#define NORDB_LOG_LEVEL_DEBUG 4
+
+#if defined(NORDB_ENABLE_LOG)
+#ifndef NORDB_LOG_PRINTF
+#define NORDB_LOG_PRINTF printf
+#endif
+#ifndef NORDB_LOG_LEVEL
+#define NORDB_LOG_LEVEL NORDB_LOG_LEVEL_INFO
+#endif
+
+#if (NORDB_LOG_LEVEL >= NORDB_LOG_LEVEL_ERROR)
+#define err_log(...)  do { NORDB_LOG_PRINTF(__VA_ARGS__); } while (0)
+#else
+#define err_log(...)  do { } while (0)
+#endif
+
+#if (NORDB_LOG_LEVEL >= NORDB_LOG_LEVEL_WARN)
+#define warn_log(...) do { NORDB_LOG_PRINTF(__VA_ARGS__); } while (0)
+#else
+#define warn_log(...) do { } while (0)
+#endif
+
+#if (NORDB_LOG_LEVEL >= NORDB_LOG_LEVEL_INFO)
+#define info_log(...) do { NORDB_LOG_PRINTF(__VA_ARGS__); } while (0)
+#else
+#define info_log(...) do { } while (0)
+#endif
+
+#if (NORDB_LOG_LEVEL >= NORDB_LOG_LEVEL_DEBUG)
+#define debug_log(...) do { NORDB_LOG_PRINTF(__VA_ARGS__); } while (0)
+#else
+#define debug_log(...) do { } while (0)
+#endif
+#else
+#define err_log(...)   do { } while (0)
+#define warn_log(...)  do { } while (0)
+#define info_log(...)  do { } while (0)
+#define debug_log(...) do { } while (0)
+#endif
 
 /*heap and memory management*/
 #define nordb_malloc(x)	malloc(x)

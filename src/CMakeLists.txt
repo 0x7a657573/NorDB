@@ -27,10 +27,16 @@ project(${PROJECT_NAME} C)
 
 find_package(Threads REQUIRED)
 
+option(NORDB_ENABLE_LOG "Enable NorDB core logging macros (info_log/err_log)" OFF)
+
 add_library(${LIBRARY_NAME} STATIC
     ${LIBRARY_HEADERS}
     ${LIBRARY_SOURCE}
 )
+
+if(NORDB_ENABLE_LOG)
+    target_compile_definitions(${LIBRARY_NAME} PUBLIC NORDB_ENABLE_LOG)
+endif()
 
 target_include_directories(${LIBRARY_NAME} PRIVATE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/>
