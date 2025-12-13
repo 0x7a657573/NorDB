@@ -85,6 +85,18 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 	return DB;
 }
 
+void NorDB_Destroy(NorDB_t *db)
+{
+	if (!db)
+		return;
+	if (db->Header_Cache)
+	{
+		nordb_free(db->Header_Cache);
+		db->Header_Cache = NULL;
+	}
+	nordb_free(db);
+}
+
 bool NorDB_Init_Sector(NorDB_t *db, int Sector)
 {
 	NorDB_HWLayer *hw = db->DB_ll;
@@ -160,7 +172,7 @@ uint32_t NorDB_GetWriteable_Record(NorDB_t *db)
 	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
 	bool CanForamtInUsed = false;
 	uint16_t SearchSector = db->DB_ll->LastWriteSector;
-	for(int i=0;i<2;i++)
+	for(int i=0;i<db->DB_ll->SectorNumber;i++)
 	{
 		uint32_t res = NorDB_Find_First_Free_point_in_Sector(db, SearchSector,Header,CanForamtInUsed);
 		if(res!=0)
