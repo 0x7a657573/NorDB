@@ -61,6 +61,7 @@ int main(void)
 	RunTest(OverWrite_Test, DB, 1);
 	RunTest(WriteRead_Time_Test, DB, 100);
 	RunTest(DeleteDB_Test, DB, 100);
+	RunTest(Clear_Test, DB, 100);
 
 	return EXIT_SUCCESS;
 }

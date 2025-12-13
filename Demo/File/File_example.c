@@ -38,7 +38,7 @@ int main(void)
 	RunTest(RoundRobin_Test, DB, 1);
 	RunTest(OverWrite_Test, DB, 1);
 	RunTest(DeleteDB_Test, DB, 10);
-	RunTest(Erase_Test, DB, 100);
+	RunTest(Clear_Test, DB, 100);
 
 	return EXIT_SUCCESS;
 }
