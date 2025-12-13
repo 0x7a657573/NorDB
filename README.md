@@ -4,43 +4,52 @@
 
 NorDB is a lightweight, sector-based FIFO (First-In-First-Out) queue database specifically designed for NOR flash memory in embedded systems. It solves the problem of reliably storing sequential records (logs, sensor data, events) on flash storage while respecting NOR flash constraints and distributing wear across sectors.
 
+## Implementation notes
+
+* This library is optimized for append-only FIFO workloads. It is not intended for random updates.
+* Each stored record is `RecordSize + 1` bytes on storage (one CRC8 byte is appended internally).
+* The sector header is identified by `NorDB_Magic = 0x0766` and `NorDB_RVer = 0x0002`.
+* `NorDB_Clear()` performs a logical clear (marks unread records as read). Physical erase happens lazily when a fully-consumed sector is reused.
+* After restart/power-loss, `NorDB_SyncData()` rebuilds runtime state (read/write sector pointers and unread count) by scanning sector headers and record mark bits.
+
 ### Core Problem Solved
 
 NOR flash requires erasing before writing (erase sets all bits to 1, writes can only flip 1→0), and has limited erase cycles (~100K-1M per block). NorDB provides a circular queue abstraction that:
-*   Manages the erase-before-write cycle automatically.
-*   Distributes writes across all available sectors to maximize flash lifespan (wear-leveling).
-*   Provides a simple `AddRecord`/`ReadRecord` interface, hiding the complexities of flash management.
-*   Ensures data integrity with CRC checks and power-loss recovery.
+
+* Manages the erase-before-write cycle automatically.
+* Distributes erase/write activity across sectors via circular usage (passive wear distribution for FIFO workloads).
+* Provides a simple `AddRecord`/`ReadRecord` interface, hiding the complexities of flash management.
+* Ensures data integrity with CRC checks and rebuilds runtime state after power-loss by scanning sector headers/record marks.
 
 ### Real-World Use Cases
 
-*   Sensor data logging (temperature, accelerometer readings)
-*   Event buffers (system events, error logs)
-*   Message queues in embedded systems
-*   Persistent circular buffers for telemetry
-*   Any scenario requiring durable FIFO storage with limited flash wear
+* Sensor data logging (temperature, accelerometer readings)
+* Event buffers (system events, error logs)
+* Message queues in embedded systems
+* Persistent circular buffers for telemetry
+* Any scenario requiring durable FIFO storage with limited flash wear
 
 
 ## Key Features
 
-*   **Wear-Leveling:** NorDB implements a wear-leveling mechanism to distribute writes across the flash blocks, which helps to extend the life of the storage medium.
-*   **Multi-Backend Support:** NorDB supports multiple storage backends, including NOR flash, RAM, and file-based systems. This allows for flexible testing and simulation, as well as easy adaptation to different hardware platforms.
-*   **Flash Partitioning:** NorDB provides the ability to partition the flash memory, allowing for multiple databases to coexist on the same chip.
-*   **Optimized for Flash:** NorDB is optimized for use with NOR flash memory, taking into account the specific characteristics of this type of memory, such as the need for erase-before-write and the limited number of erase cycles.
-*   **Thread-Safe:** NorDB is designed to be thread-safe, using a semaphore to protect critical sections of the code.
+* **Wear Distribution:** NorDB passively distributes erase/write activity across sectors by using a circular FIFO strategy (this is not a full FTL-style wear-leveling implementation).
+* **Multi-Backend Support:** NorDB supports multiple storage backends, including NOR flash, RAM, and file-based systems. This allows for flexible testing and simulation, as well as easy adaptation to different hardware platforms.
+* **Flash Partitioning:** NorDB provides the ability to partition the flash memory, allowing for multiple databases to coexist on the same chip.
+* **Optimized for Flash:** NorDB is optimized for use with NOR flash memory, taking into account the specific characteristics of this type of memory, such as the need for erase-before-write and the limited number of erase cycles.
+* **Thread-Safe:** NorDB is designed to be thread-safe, using a semaphore to protect critical sections of the code.
 
 ## Concepts/Terminology
 
-*   **Block/Page:** In the context of NorDB, a block is a contiguous region of memory that can be erased as a single unit. A page is a smaller unit of memory that can be written to.
-*   **Erase-before-write:** NOR flash memory has the characteristic that it can only be written to after it has been erased. This means that before writing to a block, it must first be erased, which sets all the bits in the block to 1.
-*   **Metadata:** NorDB stores metadata in the header of each sector, which includes a magic number, version, sync counter, and record size. This metadata is used to validate the integrity of the data and to synchronize the database state.
+* **Block/Page:** In the context of NorDB, a block is a contiguous region of memory that can be erased as a single unit. A page is a smaller unit of memory that can be written to.
+* **Erase-before-write:** NOR flash memory has the characteristic that it can only be written to after it has been erased. This means that before writing to a block, it must first be erased, which sets all the bits in the block to 1.
+* **Metadata:** NorDB stores metadata in the header of each sector, which includes a magic number, version, sync counter, and record size. This metadata is used to validate the integrity of the data and to synchronize the database state.
 
 
 ## Architecture and Module Organization
 
 NorDB has a layered architecture that separates the core database logic from the underlying storage medium.
 
-```
+```text
 +---------------------+
 |    Application      |
 +---------------------+
@@ -73,9 +82,8 @@ NorDB has a layered architecture that separates the core database logic from the
 +--------+-------+--------+
 ```
 
-
 *   **Public API:** The public API provides a set of functions for interacting with the database, such as `NorDB_AddRecord`, `NorDB_ReadRecord`, and `NorDB_Clear`.
-*   **Core Logic:** The core logic implements the main functionality of the database, such as record management, wear-leveling, and data synchronization.
+*   **Core Logic:** The core logic implements the main functionality of the database, such as record management, passive wear distribution (circular usage), and data synchronization.
 *   **Hardware Abstraction Layer (HAL):** The HAL provides a generic interface to the underlying storage medium. It consists of a set of function pointers for performing low-level operations, such as `SectorErace`, `WriteBuffer`, and `ReadBuffer`.
 *   **Storage Backends:** NorDB supports multiple storage backends, each of which implements the HAL interface for a specific type of storage medium (e.g., NOR flash, RAM, file).
 
@@ -176,8 +184,9 @@ The public API is defined in `src/include/NorDB.h`.
     *   `hw`: A pointer to the hardware abstraction layer.
     *   `RecordSize`: The size of a single record.
     *   Returns a pointer to the new database instance, or `NULL` on error.
-*   **`bool NorDB_Clear(NorDB_t *db)`:** Erases the entire database.
+*   **`bool NorDB_Clear(NorDB_t *db)`:** Clears the database logically by marking all unread records as read.
     *   `db`: A pointer to the database instance.
+    *   Note: This does not necessarily perform a physical erase of all sectors. Sectors are erased lazily when reused.
     *   Returns `true` on success, or `false` on error.
 *   **`uint32_t NorDB_AddRecord(NorDB_t *db, void *RecoedData)`:** Adds a new record to the database.
     *   `db`: A pointer to the database instance.
@@ -194,7 +203,7 @@ The public API is defined in `src/include/NorDB.h`.
     *   `db`: A pointer to the database instance.
     *   Returns the number of free records.
 
-##  Backends
+## Backends
 
 ### Flash Backend
 
@@ -334,7 +343,7 @@ NorDB does NOT track per-block erase counts or perform active block remapping. I
 
 **Example with 3 sectors:**
 
-```
+```text
 Time  | Action         | Sector 0      | Sector 1      | Sector 2
 ------|----------------|---------------|---------------|---------------
 T0    | Init           | Sync=1 (Free) | Sync=- (Free) | Sync=- (Free)
@@ -433,7 +442,7 @@ Functions returning `bool`:
    - Prevents inconsistent state during recovery
 
 4. **`NorDB_Clear()`** (lines 281, 289):
-   - Mass erase is atomic
+   - Logical clear (mark-as-read loop) is atomic
 
 **Thread Safety Guarantees:**
 - Multiple threads can safely call `NorDB_AddRecord()` and `NorDB_ReadRecord()`
@@ -450,7 +459,7 @@ Functions returning `bool`:
 ## Storage Layout and Format
 
 ### Sector Physical Layout
-```
+```text
 Byte Offset | Content
 ------------|----------------------------------------------------------
 0x0000      | NorDB_Header_t (10 bytes base)
@@ -474,7 +483,7 @@ SectorSize  | [End of sector]
 The on-storage format of the data is as follows:
 
 *   **Sector Header:** Each sector begins with a header that contains the following information:
-    *   `Magic`: A 16-bit magic number (`0x7A65`).
+    *   `Magic`: A 16-bit magic number (`0x0766`).
     *   `Vertion`: A 16-bit version number.
     *   `SyncCounter`: A 32-bit sync counter.
     *   `RecordSize`: The size of a single record.
@@ -484,6 +493,7 @@ The on-storage format of the data is as follows:
 The library uses a CRC-8 checksum to ensure data integrity. The checksum is calculated using a lookup table (`crc8x_table`) and is appended to each record before it is written to the storage medium.
 
 The endianness of the data is not specified in the repository.
+
 
 ## Testing
 
