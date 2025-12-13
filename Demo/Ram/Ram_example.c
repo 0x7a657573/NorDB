@@ -16,10 +16,30 @@
 #include <ll/Ram_ll.h>
 #include "TestRoutines.h"
 
-int main(void)
+int main(int argc, char **argv)
 {
-	NorDB_HWLayer *Ram_Hw = Ramll_Init(4096, 4);	
+	srand(time(NULL));
+
+	uint32_t sector_size = 4096;
+	uint32_t sector_count = 4;
+	if (argc >= 2)
+		sector_size = (uint32_t)strtoul(argv[1], NULL, 0);
+	if (argc >= 3)
+		sector_count = (uint32_t)strtoul(argv[2], NULL, 0);
+
+	NorDB_HWLayer *Ram_Hw = Ramll_Init(sector_size, sector_count);	
+	if (!Ram_Hw)
+	{
+		printf("Error: Ramll_Init failed\n");
+		return EXIT_FAILURE;
+	}
+
 	NorDB_t *DB = NorDB(Ram_Hw, GetDummyRecordSize());
+	if (!DB)
+	{
+		printf("Error: NorDB init failed\n");
+		return EXIT_FAILURE;
+	}
 
 	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
 	uint32_t Sector_Number = DB->DB_ll->SectorNumber;
@@ -36,6 +56,7 @@ int main(void)
 	RunTest(WriteRead_Time_Test, DB, 10);
 	RunTest(DeleteDB_Test, DB, 10);
 	RunTest(Clear_Test, DB, 100);
+	RunTest(ReadEmpty_Test, DB, 0);
 	
 	return EXIT_SUCCESS;
 }
