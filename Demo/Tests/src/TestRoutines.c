@@ -321,7 +321,12 @@ bool WriteRead_Time_Test(NorDB_t *DB, char *name, int count)
 	for(int i=0;i<count; i++)
 	{
 		get_RandomRecord(&temp);
-		NorDB_AddRecord(DB, &temp);
+		uint32_t w = NorDB_AddRecord(DB, &temp);
+		if (w == 0)
+		{
+			printf("\tError to Write Rec %i (DB full or write failed)\n", i);
+			return false;
+		}
 	}
 	end = GetTime();
     time_spent = end - start;
@@ -351,49 +356,71 @@ bool WriteRead_Time_Test(NorDB_t *DB, char *name, int count)
 bool DeleteDB_Test(NorDB_t *DB, char *name, int count)
 {
 	dummy_t temp;
-	
-	NorDB_t* NewDB = malloc(sizeof(NorDB_t));
-	memcpy(NewDB, DB, sizeof(NorDB_t));
+
+	strcpy(name, "Recovery");
+
+	printf("--->NorDB Recovery (Restart) Test\n");
+
+	/* start from a known state */
+	NorDB_Clear(DB);
 
 	double start, end, time_spent;
-	printf("\tCreate a copy from Database\n\n");
 	start = GetTime();
-	for(int i=0;i<count; i++)
+	for (int i = 0; i < count; i++)
 	{
 		get_RandomRecord(&temp);
-		printf("\t(%3d)Write CS = %5d\n", i, temp.checksum);
-		NorDB_AddRecord(DB, &temp);
+		uint32_t w = NorDB_AddRecord(DB, &temp);
+		if (w == 0)
+		{
+			printf("\tError to Write Rec %i\n", i);
+			return false;
+		}
 	}
 	end = GetTime();
-    time_spent = end - start;
-    printf("\tWrite  %d records in: %f%cs\n\n", count, time_spent<0.1f?(time_spent*1000.0f):time_spent, time_spent<0.1f?'m':0);
+	time_spent = end - start;
+	printf("\tWrite  %d records in: %f%cs\n\n", count, time_spent < 0.1f ? (time_spent * 1000.0f) : time_spent, time_spent < 0.1f ? 'm' : 0);
 
-	memset(DB, 0, sizeof(NorDB_t));
-	printf("\tDeleting Database...\n");
-	printf("\tReplace copied Database\n\n");
+	/* simulate reboot: force re-sync from storage */
+	NorDB_HWLayer *hw = DB->DB_ll;
+	hw->Synced = false;
+
+	NorDB_t *NewDB = NorDB(hw, GetDummyRecordSize());
+	if (!NewDB)
+	{
+		printf("\tError: NorDB re-init failed\n");
+		return false;
+	}
+
+	uint32_t unread_after_reboot = NorDB_Get_TotalUnreadRecord(NewDB);
+	if (unread_after_reboot != (uint32_t)count)
+	{
+		printf("\tError: Unread count mismatch after reboot. expected=%d got=%d\n", count, unread_after_reboot);
+		NorDB_Destroy(NewDB);
+		return false;
+	}
 
 	start = GetTime();
-	for(int i=0;i<count; i++)
+	for (int i = 0; i < count; i++)
 	{
 		uint32_t x = NorDB_ReadRecord(NewDB, &temp);
-		printf("\t(%3d)Read  CS = %5d\n", i, temp.checksum);
-		if(x==0)
+		if (x == 0)
 		{
-			printf("\tError to Read Rec %i\n",i);
+			printf("\tError to Read Rec %i\n", i);
+			NorDB_Destroy(NewDB);
 			return false;
 		}
-		if(check_dummyRecord(&temp)==false)
+		if (check_dummyRecord(&temp) == false)
 		{
 			printf("\tRead Record not Correct!\n");
+			NorDB_Destroy(NewDB);
 			return false;
 		}
 	}
 	end = GetTime();
-    time_spent = end - start;
-    printf("\tRead  %d records in: %f%cs\n\n", count, time_spent<0.1f?(time_spent*1000.0f):time_spent, time_spent<0.1f?'m':0);
-	
-	memcpy(DB, NewDB, sizeof(NorDB_t));
-	free(NewDB);
+	time_spent = end - start;
+	printf("\tRead  %d records in: %f%cs\n\n", count, time_spent < 0.1f ? (time_spent * 1000.0f) : time_spent, time_spent < 0.1f ? 'm' : 0);
+
+	NorDB_Destroy(NewDB);
 	return true;
 }
 
@@ -466,11 +493,38 @@ bool Clear_Test(NorDB_t *DB, char *name, int count)
     return true;
 }
 
+bool ReadEmpty_Test(NorDB_t *DB, char *name, int count)
+{
+	(void)count;
+	dummy_t temp;
+	strcpy(name, "Read Empty");
+
+	printf("--->NorDB Read Empty Test\n");
+
+	NorDB_Clear(DB);
+
+	uint32_t unread = NorDB_Get_TotalUnreadRecord(DB);
+	if (unread != 0)
+	{
+		printf("\tError: DB is not empty after clear. unread=%d\n", unread);
+		return false;
+	}
+
+	uint32_t x = NorDB_ReadRecord(DB, &temp);
+	if (x != 0)
+	{
+		printf("\tError: expected ReadRecord=0 on empty DB, got=%d\n", x);
+		return false;
+	}
+
+	printf("\tRead from empty DB correctly returned 0\n\n");
+	return true;
+}
+
 
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)
 {
     char testName[20] = {0};
-    srand(time(NULL));
     double start, end;
 
     start = GetTime();
