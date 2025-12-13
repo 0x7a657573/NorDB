@@ -30,6 +30,7 @@ typedef struct
 }Filell_t;
 
 NorDB_HWLayer *Filell_Init(char *path,uint16_t SectorSize,uint16_t TotalSector);
+void Filell_Erase(void *Param);
 void Filell_Del(NorDB_HWLayer *fdb);
 
 
