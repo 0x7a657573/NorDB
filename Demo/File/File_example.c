@@ -67,6 +67,7 @@ int main(int argc, char **argv)
 	RunTest(FullFill_Test, DB, 1);
 	RunTest(RoundRobin_Test, DB, 1);
 	RunTest(OverWrite_Test, DB, 1);
+	RunTest(CRC_DetectsCorruption_Test, DB, 0);
 	RunTest(DeleteDB_Test, DB, 10);
 	RunTest(Clear_Test, DB, 100);
 	RunTest(ReadEmpty_Test, DB, 0);

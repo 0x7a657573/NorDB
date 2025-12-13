@@ -521,6 +521,58 @@ bool ReadEmpty_Test(NorDB_t *DB, char *name, int count)
 	return true;
 }
 
+bool CRC_DetectsCorruption_Test(NorDB_t *DB, char *name, int count)
+{
+	(void)count;
+	dummy_t r1, r2, out;
+	strcpy(name, "CRC Corruption");
+
+	printf("--->NorDB CRC Detects Corruption Test\n");
+
+	NorDB_Clear(DB);
+
+	get_RandomRecord(&r1);
+	get_RandomRecord(&r2);
+
+	uint32_t adr1 = NorDB_AddRecord(DB, &r1);
+	uint32_t adr2 = NorDB_AddRecord(DB, &r2);
+	if (adr1 == 0 || adr2 == 0)
+	{
+		printf("\tError: failed to add records (adr1=%u adr2=%u)\n", adr1, adr2);
+		return false;
+	}
+
+	/* corrupt first record payload in-place (keep stored CRC byte unchanged) */
+	uint8_t b = 0;
+	DB->DB_ll->ReadBuffer(DB->DB_ll->Param, adr1, &b, 1);
+	b ^= 0xFF;
+	DB->DB_ll->WriteBuffer(DB->DB_ll->Param, adr1, &b, 1);
+
+	uint32_t x = NorDB_ReadRecord(DB, &out);
+	if (x != 0)
+	{
+		printf("\tError: expected ReadRecord=0 on corrupted record, got adr=%u\n", x);
+		return false;
+	}
+	printf("\tCorrupted record correctly rejected (ReadRecord returned 0)\n");
+
+	/* next record should still be readable and correct */
+	x = NorDB_ReadRecord(DB, &out);
+	if (x == 0)
+	{
+		printf("\tError: failed to read next record after corruption\n");
+		return false;
+	}
+	if (check_dummyRecord(&out) == false)
+	{
+		printf("\tError: next record data invalid after corruption\n");
+		return false;
+	}
+
+	printf("\tNext record still readable and valid\n\n");
+	return true;
+}
+
 
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)
 {

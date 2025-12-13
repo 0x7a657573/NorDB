@@ -21,4 +21,5 @@ bool WriteRead_Time_Test(NorDB_t *DB, char *name, int count);
 bool DeleteDB_Test(NorDB_t *DB, char *name, int count);
 bool Clear_Test(NorDB_t *DB, char *name, int count);
 bool ReadEmpty_Test(NorDB_t *DB, char *name, int count);
+bool CRC_DetectsCorruption_Test(NorDB_t *DB, char *name, int count);
 #endif /* READ_WRITE_H_ */
