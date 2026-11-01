@@ -15,7 +15,7 @@
 									 Header->Vertion==NorDB_RVer && \
 									 Header->RecordSize==db->Record_Size)
 
-bool NorDB_SyncData(NorDB_t *db);
+static bool NorDB_SyncData_Locked(NorDB_t *db);
 void NorDB_Set_Read_Header_In_sector(NorDB_t *db,uint32_t Point_Adr);
 
 static inline void NorDB_LogHeaderMismatch(NorDB_t *db, uint16_t sector, NorDB_Header_t *Header, const char *where)
@@ -105,14 +105,6 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 	nordb_memset(DB,0,sizeof(NorDB_t));
 	DB->DB_ll = hw;
 	DB->Record_Size = RecordSize + sizeof(uint8_t);	/*add one byte crc*/
-	if(hw->Synced && hw->RecordSize != DB->Record_Size)
-	{
-		err_log("NorDB init failed: storage in use with record_size=%u, requested=%u\r\n",
-				hw->RecordSize, DB->Record_Size);
-		nordb_free(DB);
-		return NULL;
-	}
-	
 	uint32_t max_record_in_sector = (((hw->SectorSize - (sizeof(NorDB_Header_t))) / DB->Record_Size) + 1);
 	uint32_t header_space_for_status = max_record_in_sector / 4 + 1;
 	DB->Header_Size = header_space_for_status + sizeof(NorDB_Header_t);
@@ -125,18 +117,33 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 		return NULL;
 	}
 
-	if(!hw->Synced)
+	/*lock io*/
+	NorDB_sem_Lock(&hw->sema);
+	if(hw->Synced)
 	{
-		if(!NorDB_SyncData(DB))
+		if(hw->RecordSize != DB->Record_Size)
 		{
+			err_log("NorDB init failed: storage in use with record_size=%u, requested=%u\r\n",
+					hw->RecordSize, DB->Record_Size);
+			/*unlock io*/
+			NorDB_sem_Unlock(&hw->sema);
 			NorDB_Destroy(DB);
 			return NULL;
 		}
+	}
+	else if(!NorDB_SyncData_Locked(DB))
+	{
+		/*unlock io*/
+		NorDB_sem_Unlock(&hw->sema);
+		NorDB_Destroy(DB);
+		return NULL;
 	}
 
 	info_log("NorDB init done: header_size=%u record_size_crc=%u rec_per_sector=%u unread=%u last_w=%u last_r=%u\r\n",
 			DB->Header_Size, DB->Record_Size, DB->Record_NumberInSector,
 			hw->TotalUnreadRecord, hw->LastWriteSector, hw->LastReadSector);
+	/*unlock io*/
+	NorDB_sem_Unlock(&hw->sema);
 	
 	return DB;
 }
@@ -307,7 +314,8 @@ static bool NorDB_Repair_LastWrite_Record(NorDB_t *db)
 	return true;
 }
 
-bool NorDB_SyncData(NorDB_t *db)
+/*hw->sema must be held by the caller*/
+static bool NorDB_SyncData_Locked(NorDB_t *db)
 {
 	if(db==NULL)
 		return false;
@@ -318,8 +326,6 @@ bool NorDB_SyncData(NorDB_t *db)
 	info_log("NorDB sync begin: hw=%s sectors=%u sector_size=%u\r\n",
 			hw->DriverName ? hw->DriverName(hw->Param) : "(null)",
 			hw->SectorNumber, hw->SectorSize);
-	/*lock io*/
-	NorDB_sem_Lock(&hw->sema);
 	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
 	uint32_t OldSyncCounter = hw->SyncCounter;
 	uint16_t OldLastWriteSector = hw->LastWriteSector;
@@ -342,8 +348,6 @@ bool NorDB_SyncData(NorDB_t *db)
 			hw->SyncCounter = OldSyncCounter;
 			hw->LastWriteSector = OldLastWriteSector;
 			hw->LastReadSector = OldLastReadSector;
-			/*unlock io*/
-			NorDB_sem_Unlock(&hw->sema);
 			return false;
 		}
 
@@ -395,8 +399,6 @@ bool NorDB_SyncData(NorDB_t *db)
 	hw->TotalUnreadRecord = UnreadRecord;
 	hw->RecordSize = db->Record_Size;
 	hw->Synced = true;
-	/*unlock io*/
-	NorDB_sem_Unlock(&hw->sema);
 	info_log("NorDB sync done: unread=%u sync=%u last_w=%u last_r=%u\r\n",
 			hw->TotalUnreadRecord, hw->SyncCounter, hw->LastWriteSector, hw->LastReadSector);
 	return true;
@@ -511,10 +513,9 @@ bool NorDB_Clear(NorDB_t *db)
 		return 0;
 	
 	NorDB_HWLayer *hw = db->DB_ll;
-	info_log("NorDB clear begin: unread=%u\r\n", hw->TotalUnreadRecord);
-
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
+	info_log("NorDB clear begin: unread=%u\r\n", hw->TotalUnreadRecord);
 
 	// Erase Sector one by one
 	while(1)
@@ -528,12 +529,12 @@ bool NorDB_Clear(NorDB_t *db)
 		hw->TotalUnreadRecord--;
 	}
 
+	/*Re calculate static data*/
+	NorDB_SyncData_Locked(db);
+	info_log("NorDB clear done: unread=%u\r\n", hw->TotalUnreadRecord);
+
 	/*unlock io*/
 	NorDB_sem_Unlock(&hw->sema);
-
-	/*Re calculate static data*/
-	NorDB_SyncData(db);
-	info_log("NorDB clear done: unread=%u\r\n", hw->TotalUnreadRecord);
 
 	return true;
 }

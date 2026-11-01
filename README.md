@@ -12,7 +12,7 @@ NorDB is a lightweight, sector-based FIFO (First-In-First-Out) queue database sp
 * Each stored record is `RecordSize + 1` bytes on storage (one CRC8 byte is appended internally).
 * The sector header is identified by `NorDB_Magic = 0x0766` and `NorDB_RVer = 0x0002`.
 * `NorDB_Clear()` performs a logical clear (marks unread records as read). Physical erase happens lazily when a fully-consumed sector is reused.
-* After restart/power-loss, `NorDB_SyncData()` rebuilds runtime state (read/write sector pointers and unread count) by scanning sector headers and record mark bits.
+* After restart/power-loss, `NorDB()` rebuilds runtime state (read/write sector pointers and unread count) by scanning sector headers and record mark bits.
 
 ### Core Problem Solved
 
@@ -448,7 +448,7 @@ Functions returning `bool`:
    - Entire read transaction is atomic
    - Prevents concurrent reads advancing pointer incorrectly
 
-3. **`NorDB_SyncData()`** (lines 157, 209):
+3. **Internal sync (`NorDB_SyncData_Locked`, called by `NorDB()` and `NorDB_Clear()`)**:
    - Sector scan is atomic
    - Prevents inconsistent state during recovery
 
