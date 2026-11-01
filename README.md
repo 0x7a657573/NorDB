@@ -7,6 +7,7 @@ NorDB is a lightweight, sector-based FIFO (First-In-First-Out) queue database sp
 ## Implementation notes
 
 * This library is optimized for append-only FIFO workloads. It is not intended for random updates.
+* The backend must provide at least 2 sectors (`NorDB()` returns `NULL` otherwise): a sector can only be erased and reused by moving to another one.
 * Each stored record is `RecordSize + 1` bytes on storage (one CRC8 byte is appended internally).
 * The sector header is identified by `NorDB_Magic = 0x0766` and `NorDB_RVer = 0x0002`.
 * `NorDB_Clear()` performs a logical clear (marks unread records as read). Physical erase happens lazily when a fully-consumed sector is reused.

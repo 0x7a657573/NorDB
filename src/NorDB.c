@@ -78,6 +78,11 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 {
 	if(!hw)
 		return NULL;
+	if(hw->SectorNumber < 2)
+	{
+		err_log("NorDB init failed: at least 2 sectors required. sectors=%u\r\n", hw->SectorNumber);
+		return NULL;
+	}
 	info_log("NorDB init: hw=%s sector_size=%u sector_count=%u record_size=%u\r\n",
 			hw->DriverName ? hw->DriverName(hw->Param) : "(null)",
 			hw->SectorSize, hw->SectorNumber, RecordSize);
