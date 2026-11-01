@@ -56,6 +56,7 @@ NorDB_HWLayer *Ramll_Init(uint16_t SectorSize,uint16_t TotalSector)
 {
 	NorDB_HWLayer *Ramhw = nordb_malloc(sizeof(NorDB_HWLayer));
 	if(Ramhw==NULL)	return NULL;
+	nordb_memset(Ramhw,0,sizeof(NorDB_HWLayer));
 
 	uint32_t total_Size = TotalSector *  SectorSize;
 	Ramll_t *Ramsw = nordb_malloc(sizeof(Ramll_t));
@@ -64,6 +65,7 @@ NorDB_HWLayer *Ramll_Init(uint16_t SectorSize,uint16_t TotalSector)
 		nordb_free(Ramhw);
 		return NULL;
 	}
+	nordb_memset(Ramsw,0,sizeof(Ramll_t));
 
 	Ramsw->Sector_Size = SectorSize;
 	Ramsw->Total_Sector = TotalSector;

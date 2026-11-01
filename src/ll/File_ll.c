@@ -113,6 +113,7 @@ NorDB_HWLayer *Filell_Init(char *path,uint16_t SectorSize,uint16_t TotalSector)
 {
     NorDB_HWLayer *Filehw = nordb_malloc(sizeof(NorDB_HWLayer));
 	if(Filehw==NULL)	return NULL;
+	nordb_memset(Filehw,0,sizeof(NorDB_HWLayer));
 
 	uint32_t total_Size = TotalSector *  SectorSize;
 	Filell_t *Filesw = nordb_malloc(sizeof(Filell_t));

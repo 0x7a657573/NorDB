@@ -286,6 +286,7 @@ NorDB_HWLayer *FlashDB_Init(uint16_t StartSector,uint16_t TotalSector,SpiBus_t *
 
 	NorDB_HWLayer *FlashLL = nordb_malloc(sizeof(NorDB_HWLayer));
 	if(FlashLL==NULL)	return NULL;
+	nordb_memset(FlashLL,0,sizeof(NorDB_HWLayer));
 
 	/*Check Device on Bus*/
 	if(!spi->DevOnBus)
@@ -320,6 +321,7 @@ NorDB_HWLayer *FlashDB_Init(uint16_t StartSector,uint16_t TotalSector,SpiBus_t *
 		nordb_free(FlashLL);
 		return NULL;
 	}
+	nordb_memset(FL,0,sizeof(FlashDev_t));
 
 	/*init sema*/
 	if(!NorDB_sem_init(&FlashLL->sema))
