@@ -580,6 +580,109 @@ bool CRC_DetectsCorruption_Test(NorDB_t *DB, char *name, int count)
 }
 
 
+bool PowerLoss_PhantomRecord_Test(NorDB_t *DB, char *name, int count)
+{
+	(void)count;
+	dummy_t r[3], r4, out;
+	strcpy(name, "PowerLoss Phantom");
+
+	printf("--->NorDB Power Loss Phantom Record Test\n");
+
+	NorDB_HWLayer *hw = DB->DB_ll;
+	uint32_t adr = 0;
+	uint32_t idx = 0;
+
+	NorDB_Clear(DB);
+
+	/* the phantom slot must be in the same sector as the last record */
+	for (int attempt = 0; attempt < 8; attempt++)
+	{
+		for (int i = 0; i < 3; i++)
+		{
+			get_RandomRecord(&r[i]);
+			adr = NorDB_AddRecord(DB, &r[i]);
+			if (adr == 0)
+			{
+				printf("\tError: failed to add record %d\n", i);
+				return false;
+			}
+		}
+		idx = ((adr % hw->SectorSize) - DB->Header_Size) / DB->Record_Size;
+		if (idx + 1 < DB->Record_NumberInSector)
+			break;
+		/* no room after this record: consume and retry in the next sector */
+		for (int i = 0; i < 3; i++)
+			NorDB_ReadRecord(DB, &out);
+		idx = DB->Record_NumberInSector;
+	}
+	if (idx + 1 >= DB->Record_NumberInSector)
+	{
+		printf("\tError: could not place records before the end of a sector\n");
+		return false;
+	}
+
+	/* power loss: next slot marked unread, payload never written */
+	idx++;
+	uint32_t byte_adr = (adr / hw->SectorSize) * hw->SectorSize + sizeof(NorDB_Header_t) + (idx / 4);
+	int bit_shift = (idx % 4) * 2;
+	uint8_t b = 0;
+	hw->ReadBuffer(hw->Param, byte_adr, &b, 1);
+	b &= ~(nordb_FreeMark << bit_shift);
+	b |= nordb_UnReadMark << bit_shift;
+	hw->WriteBuffer(hw->Param, byte_adr, &b, 1);
+
+	/* simulate reboot: a second NorDB_t on the same hw runs the sync */
+	uint32_t crc_before = NorDB_Get_CrcErrorCount(DB);
+	hw->Synced = false;
+	NorDB_t *DB2 = NorDB(hw, GetDummyRecordSize());
+	if (DB2 == NULL)
+	{
+		printf("\tError: failed to re-create DB\n");
+		return false;
+	}
+
+	bool ok = false;
+	if (NorDB_Get_TotalUnreadRecord(DB2) != 3)
+	{
+		printf("\tError: expected 3 unread after sync, got %u\n", NorDB_Get_TotalUnreadRecord(DB2));
+		goto done;
+	}
+	if (NorDB_Get_CrcErrorCount(DB2) != crc_before + 1)
+	{
+		printf("\tError: CrcErrorCount expected %u, got %u\n", crc_before + 1, NorDB_Get_CrcErrorCount(DB2));
+		goto done;
+	}
+	for (int i = 0; i < 3; i++)
+	{
+		if (NorDB_ReadRecord(DB2, &out) == 0 || memcmp(&out, &r[i], sizeof(out)) != 0)
+		{
+			printf("\tError: record %d not valid after sync\n", i);
+			goto done;
+		}
+	}
+	if (NorDB_ReadRecord(DB2, &out) != 0 || NorDB_Get_CrcErrorCount(DB2) != crc_before + 1)
+	{
+		printf("\tError: phantom record still readable\n");
+		goto done;
+	}
+	printf("\tPhantom record dropped at sync, 3 valid records intact\n");
+
+	get_RandomRecord(&r4);
+	if (NorDB_AddRecord(DB2, &r4) == 0 || NorDB_ReadRecord(DB2, &out) == 0 ||
+		memcmp(&out, &r4, sizeof(out)) != 0)
+	{
+		printf("\tError: DB not usable after repair\n");
+		goto done;
+	}
+	printf("\tDB still accepts records after repair\n\n");
+	ok = true;
+
+done:
+	NorDB_Destroy(DB2);
+	return ok;
+}
+
+
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)
 {
     char testName[20] = {0};

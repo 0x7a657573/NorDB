@@ -15,6 +15,7 @@
 									 Header->RecordSize==db->Record_Size)
 
 void NorDB_SyncData(NorDB_t *db);
+void NorDB_Set_Read_Header_In_sector(NorDB_t *db,uint32_t Point_Adr);
 
 static inline void NorDB_LogHeaderMismatch(NorDB_t *db, uint16_t sector, NorDB_Header_t *Header, const char *where)
 {
@@ -56,17 +57,21 @@ static uint8_t crc8x_table[] =
     0x15, 0x3b, 0x0a, 0x59, 0x68, 0xff, 0xce, 0x9d, 0xac
 };
 
-unsigned NorDB_crc8x_fast(void const *mem, size_t len)
+static unsigned NorDB_crc8x_update(unsigned crc, unsigned char const *data, size_t len)
 {
-	unsigned crc = 0xFF;
-    unsigned char const *data = mem;
-    if (data == NULL)
-        return 0xff;
-    crc &= 0xff;
     while (len--)
         crc = crc8x_table[crc ^ *data++];
 
     return crc;
+}
+
+unsigned NorDB_crc8x_fast(void const *mem, size_t len)
+{
+    unsigned char const *data = mem;
+    if (data == NULL)
+        return 0xff;
+
+    return NorDB_crc8x_update(0xFF, data, len);
 }
 
 NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
@@ -230,6 +235,45 @@ uint32_t NorDB_GetWriteable_Record(NorDB_t *db)
 	return 0;
 }
 
+/*power loss can leave only the newest slot marked unread without payload*/
+static bool NorDB_Repair_LastWrite_Record(NorDB_t *db)
+{
+	NorDB_HWLayer *hw = db->DB_ll;
+	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
+	int Last = -1;
+
+	hw->ReadBuffer(hw->Param,(hw->LastWriteSector*hw->SectorSize),(uint8_t*)Header,db->Header_Size);
+	for(int j=0;j<db->Record_NumberInSector;j++)
+	{
+		if(nordb_GetBitStatus(Header->Records,j) == nordb_UnReadMark)
+			Last = j;
+	}
+	if(Last < 0)
+		return false;
+
+	uint32_t Adr = (hw->LastWriteSector*hw->SectorSize) + db->Header_Size + (Last * db->Record_Size);
+	uint8_t Chunk[16];
+	const uint16_t ChunkSize = sizeof(Chunk);
+	uint16_t PayloadLen = db->Record_Size-1;
+	unsigned Crc = 0xFF;
+	for(uint16_t Done=0; Done<PayloadLen; )
+	{
+		uint16_t n = (PayloadLen-Done) < ChunkSize ? (PayloadLen-Done):ChunkSize;
+		hw->ReadBuffer(hw->Param,Adr+Done,Chunk,n);
+		Crc = NorDB_crc8x_update(Crc,Chunk,n);
+		Done += n;
+	}
+	hw->ReadBuffer(hw->Param,Adr+PayloadLen,Chunk,1);
+	if(Crc == Chunk[0])
+		return false;
+
+	err_log("NorDB sync: incomplete record dropped (stored=%u calc=%u) adr=%u\r\n",
+			Chunk[0], Crc, Adr);
+	NorDB_Set_Read_Header_In_sector(db,Adr);
+	hw->CrcErrorCount++;
+	return true;
+}
+
 void NorDB_SyncData(NorDB_t *db)
 {
 	if(db==NULL)
@@ -289,6 +333,9 @@ void NorDB_SyncData(NorDB_t *db)
 			hw->LastWriteSector = i;
 		}
 	}
+
+	if(UnreadRecord>0 && NorDB_Repair_LastWrite_Record(db))
+		UnreadRecord--;
 
 	if(UnreadRecord==0)
 	{
