@@ -163,6 +163,14 @@ bool NorDB_Init_Sector(NorDB_t *db, int Sector)
 
 	/*erase sector*/
 	hw->SectorErace(hw->Param,Sector*hw->SectorSize);
+
+	/*
+	 * The writer only formats a fully read sector, so unread data lies after
+	 * it in ring order. Do not leave the read head on it, or the newest
+	 * records written here would be read before the older ones.
+	 */
+	if(Sector == hw->LastReadSector && hw->TotalUnreadRecord > 0)
+		hw->LastReadSector = ((Sector+1) >= hw->SectorNumber) ? 0:(Sector+1);
 	
 	hw->SyncCounter++;
 	NorDB_Header_t Header;

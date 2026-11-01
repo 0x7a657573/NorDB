@@ -760,8 +760,6 @@ bool FreeRecord_Accuracy_Test(NorDB_t *DB, char *name, int count)
 	printf("--->NorDB FreeRecord Accuracy Test\n");
 
 	uint32_t per_sector = DB->Record_NumberInSector;
-	/* stay one sector short of wrapping onto the sector the read head still points to */
-	uint32_t fill = per_sector * (DB->DB_ll->SectorNumber - 1);
 	bool ok = true;
 
 	NorDB_Clear(DB);
@@ -784,17 +782,17 @@ bool FreeRecord_Accuracy_Test(NorDB_t *DB, char *name, int count)
 	ok = ok && FreeRecord_Check(DB, "full, 7 read");
 
 	FreeRecord_Prepare(DB);
-	FreeRecord_Add(DB, fill);
+	FreeRecord_Add(DB, UINT32_MAX);
 	FreeRecord_Read(DB, per_sector / 2);
 	ok = ok && FreeRecord_Check(DB, "half sector read");
 
 	FreeRecord_Prepare(DB);
-	FreeRecord_Add(DB, fill);
+	FreeRecord_Add(DB, UINT32_MAX);
 	FreeRecord_ReadSector(DB);
 	ok = ok && FreeRecord_Check(DB, "one sector read");
 
 	FreeRecord_Prepare(DB);
-	FreeRecord_Add(DB, fill);
+	FreeRecord_Add(DB, UINT32_MAX);
 	FreeRecord_ReadSector(DB);
 	FreeRecord_Read(DB, 3);
 	FreeRecord_Add(DB, 4);
@@ -904,6 +902,116 @@ done:
 	}
 	NorDB_Clear(DB);
 	printf("\tFormat recovered the storage\n\n");
+	return true;
+}
+
+static void Fifo_MakeRecord(dummy_t *r, uint32_t seq)
+{
+	r->checksum = 0;
+	for (int i = 0; i < 11; i++)
+	{
+		r->dummy[i] = (i < 4) ? (uint8_t)(seq >> (8 * i)) : (uint8_t)(seq * 7 + i);
+		r->checksum += r->dummy[i];
+	}
+}
+
+/* write up to n records (stops when the DB is full), returns how many were written */
+static uint32_t Fifo_Write(NorDB_t *DB, uint32_t *next_w, uint32_t n)
+{
+	dummy_t r;
+	uint32_t done = 0;
+	while (done < n)
+	{
+		Fifo_MakeRecord(&r, *next_w);
+		if (NorDB_AddRecord(DB, &r) == 0)
+			break;
+		(*next_w)++;
+		done++;
+	}
+	return done;
+}
+
+/* read up to n records, each must carry the next expected sequence number */
+static bool Fifo_Read(NorDB_t *DB, uint32_t *next_r, uint32_t n, uint32_t *got)
+{
+	dummy_t r;
+	*got = 0;
+	while (*got < n && NorDB_ReadRecord(DB, &r) != 0)
+	{
+		uint32_t seq = r.dummy[0] | (r.dummy[1] << 8) | (r.dummy[2] << 16) | ((uint32_t)r.dummy[3] << 24);
+		if (check_dummyRecord(&r) == false || seq != *next_r)
+		{
+			printf("\tError: read sequence %u, expected %u\n", seq, *next_r);
+			return false;
+		}
+		(*next_r)++;
+		(*got)++;
+	}
+	return true;
+}
+
+bool FifoOrder_Wrap_Test(NorDB_t *DB, char *name, int count)
+{
+	(void)count;
+	strcpy(name, "FIFO Order Wrap");
+
+	printf("--->NorDB FIFO Order Wrap Test\n");
+
+	uint32_t per_sector = DB->Record_NumberInSector;
+	uint32_t sectors = DB->DB_ll->SectorNumber;
+	uint32_t w = 0, r = 0, got = 0, n = 0;
+
+	NorDB_Clear(DB);
+
+	/* drain, then wrap several full laps one sector at a time */
+	for (uint32_t i = 0; i < 3 * sectors; i++)
+	{
+		n = Fifo_Write(DB, &w, per_sector);
+		if (n != per_sector || !Fifo_Read(DB, &r, per_sector, &got) || got != per_sector)
+		{
+			printf("\tError: lap %u failed (written %u read %u)\n", i, n, got);
+			return false;
+		}
+	}
+	printf("\tDrain-then-wrap laps in order\n");
+
+	/* drain completely, then write across the wrap point */
+	for (uint32_t i = 0; i < sectors + 1; i++)
+	{
+		n = Fifo_Write(DB, &w, (sectors - 1) * per_sector + 1);
+		if (n != (sectors - 1) * per_sector + 1 || !Fifo_Read(DB, &r, UINT32_MAX, &got) || got != n)
+		{
+			printf("\tError: wrap burst %u failed (written %u read %u)\n", i, n, got);
+			return false;
+		}
+		/* start the next burst from a different offset inside the sector */
+		Fifo_Write(DB, &w, i + 1);
+		if (!Fifo_Read(DB, &r, i + 1, &got) || got != i + 1)
+		{
+			printf("\tError: offset step %u failed\n", i);
+			return false;
+		}
+	}
+	printf("\tWrite across wrap point in order\n");
+
+	/* partial drains: refill whatever the writer accepts, read part of it */
+	for (uint32_t i = 0; i < 4 * sectors; i++)
+	{
+		Fifo_Write(DB, &w, UINT32_MAX);
+		if (!Fifo_Read(DB, &r, (i % 3 + 1) * per_sector / 2 + 1, &got))
+			return false;
+	}
+	if (!Fifo_Read(DB, &r, UINT32_MAX, &got))
+		return false;
+	if (r != w)
+	{
+		printf("\tError: wrote %u records but read %u\n", w, r);
+		return false;
+	}
+	printf("\tPartial drains in order, %u records written and read once\n\n", w);
+
+	/* leave the DB empty for the following tests */
+	NorDB_Clear(DB);
 	return true;
 }
 
