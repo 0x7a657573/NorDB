@@ -84,6 +84,7 @@ int main(int argc, char **argv)
 	RunTest(IncompatibleHeader_Test, DB, 0);
 	RunTest(FifoOrder_Wrap_Test, DB, 0);
 	RunTest(PowerLoss_SectorHeader_Test, DB, 0);
+	RunTest(InitParams_Test, DB, 0);
 	RunTest(DeleteDB_Test, DB, 100);
 	RunTest(Clear_Test, DB, 100);
 	RunTest(ReadEmpty_Test, DB, 0);

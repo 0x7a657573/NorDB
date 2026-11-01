@@ -87,6 +87,14 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 	info_log("NorDB init: hw=%s sector_size=%u sector_count=%u record_size=%u\r\n",
 			hw->DriverName ? hw->DriverName(hw->Param) : "(null)",
 			hw->SectorSize, hw->SectorNumber, RecordSize);
+	/*32 bit math: RecordSize + crc byte must not wrap, header and one status byte must fit*/
+	if(RecordSize==0 ||
+	   ((uint32_t)RecordSize + sizeof(uint8_t) + sizeof(NorDB_Header_t) + 1) > hw->SectorSize)
+	{
+		err_log("NorDB init failed: invalid record_size. record=%u sector=%u\r\n",
+				RecordSize, hw->SectorSize);
+		return NULL;
+	}
 	NorDB_t *DB = nordb_malloc(sizeof(NorDB_t));
 	if(!DB)
 	{
@@ -97,13 +105,6 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 	nordb_memset(DB,0,sizeof(NorDB_t));
 	DB->DB_ll = hw;
 	DB->Record_Size = RecordSize + sizeof(uint8_t);	/*add one byte crc*/
-	if((DB->Record_Size+sizeof(NorDB_Header_t)+1) > hw->SectorSize)
-	{
-		err_log("NorDB init failed: record_size too large. record=%u sector=%u\r\n",
-				DB->Record_Size, hw->SectorSize);
-		nordb_free(DB);
-		return NULL;
-	}
 	if(hw->Synced && hw->RecordSize != DB->Record_Size)
 	{
 		err_log("NorDB init failed: storage in use with record_size=%u, requested=%u\r\n",

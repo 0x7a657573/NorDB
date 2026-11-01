@@ -1101,6 +1101,25 @@ done:
 	return ok;
 }
 
+bool InitParams_Test(NorDB_t *DB, char *name, int count)
+{
+	(void)count;
+	strcpy(name, "Init Params");
+
+	printf("--->NorDB Init Parameters Test\n");
+
+	NorDB_HWLayer *hw = DB->DB_ll;
+
+	if (NorDB(hw, 0) != NULL || NorDB(hw, 0xFFFF) != NULL || NorDB(hw, 0xFFFE) != NULL ||
+		NorDB(hw, hw->SectorSize) != NULL || NorDB(NULL, GetDummyRecordSize()) != NULL)
+	{
+		printf("\tError: NorDB() accepted invalid parameters\n");
+		return false;
+	}
+	printf("\tInvalid record sizes rejected\n\n");
+	return true;
+}
+
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)
 {
     char testName[20] = {0};
