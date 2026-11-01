@@ -431,6 +431,12 @@ bool Clear_Test(NorDB_t *DB, char *name, int count)
 
     printf("--->NorDB Clear Test\n");
 
+    // start empty and never ask for more than the DB can hold
+    NorDB_Clear(DB);
+    uint32_t writable = NorDB_Get_FreeRecord(DB);
+    if (count > (int)writable)
+        count = writable;
+
     // 1. Fill the database with some records
     printf("\tAdding %d records to the database...\n", count);
     for (int i = 0; i < count; i++)
