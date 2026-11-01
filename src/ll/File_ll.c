@@ -51,7 +51,7 @@ void Filell_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
 	Filell_t *ptr = Param;
 
-	if((address+len) < ptr->Total_Size)
+	if((address <= ptr->Total_Size) && (len <= ptr->Total_Size - address))
 	{
         if(nordb_fseek(ptr->fileid, address, SEEK_SET)!=0)
                 return;
@@ -64,7 +64,7 @@ void Filell_ReadBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
 	Filell_t *ptr = Param;
 
-	if((address+len) < ptr->Total_Size)
+	if((address <= ptr->Total_Size) && (len <= ptr->Total_Size - address))
 	{
         if(nordb_fseek(ptr->fileid, address, SEEK_SET)!=0)
             return;

@@ -21,7 +21,7 @@ void RAMll_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
 	Ramll_t *ptr = Param;
 
-	if((address+len) < ptr->Total_Size)
+	if((address <= ptr->Total_Size) && (len <= ptr->Total_Size - address))
 	{
 		nordb_memcpy(&ptr->Buffer[address],data,len);
 		//printf("wRAM (%d)->%d\n",address,len);
@@ -32,7 +32,7 @@ void RAMll_ReadBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
 	Ramll_t *ptr = Param;
 
-	if((address+len) < ptr->Total_Size)
+	if((address <= ptr->Total_Size) && (len <= ptr->Total_Size - address))
 	{
 		nordb_memcpy(data,&ptr->Buffer[address],len);
 		//printf("rRAM (%d)->%d\n",address,len);
