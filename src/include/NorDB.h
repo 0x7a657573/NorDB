@@ -18,6 +18,7 @@ typedef struct
 
 	/*statistics var*/
 	uint32_t TotalUnreadRecord;
+	uint32_t CrcErrorCount;
 
 	/*Read/Write Sync*/
 	bool	 Synced;
@@ -62,6 +63,7 @@ bool	 NorDB_Clear(NorDB_t *db);
 uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData);
 uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData);
 uint32_t NorDB_Get_TotalUnreadRecord(NorDB_t *db);
+uint32_t NorDB_Get_CrcErrorCount(NorDB_t *db);
 uint32_t NorDB_Get_FreeRecord(NorDB_t *db);
 void	 NorDB_Destroy(NorDB_t *db);
 

@@ -548,28 +548,34 @@ bool CRC_DetectsCorruption_Test(NorDB_t *DB, char *name, int count)
 	b ^= 0xFF;
 	DB->DB_ll->WriteBuffer(DB->DB_ll->Param, adr1, &b, 1);
 
-	uint32_t x = NorDB_ReadRecord(DB, &out);
-	if (x != 0)
-	{
-		printf("\tError: expected ReadRecord=0 on corrupted record, got adr=%u\n", x);
-		return false;
-	}
-	printf("\tCorrupted record correctly rejected (ReadRecord returned 0)\n");
+	uint32_t crc_before = NorDB_Get_CrcErrorCount(DB);
 
-	/* next record should still be readable and correct */
-	x = NorDB_ReadRecord(DB, &out);
-	if (x == 0)
+	/* corrupt record is skipped; the next valid record is returned */
+	uint32_t x = NorDB_ReadRecord(DB, &out);
+	if (x != adr2)
 	{
-		printf("\tError: failed to read next record after corruption\n");
+		printf("\tError: expected ReadRecord=%u (next valid record), got adr=%u\n", adr2, x);
 		return false;
 	}
-	if (check_dummyRecord(&out) == false)
+	if (memcmp(&out, &r2, sizeof(out)) != 0 || check_dummyRecord(&out) == false)
 	{
 		printf("\tError: next record data invalid after corruption\n");
 		return false;
 	}
+	if (NorDB_Get_CrcErrorCount(DB) != crc_before + 1)
+	{
+		printf("\tError: CrcErrorCount expected %u, got %u\n", crc_before + 1, NorDB_Get_CrcErrorCount(DB));
+		return false;
+	}
+	printf("\tCorrupted record skipped, CrcErrorCount incremented\n");
 
-	printf("\tNext record still readable and valid\n\n");
+	if (NorDB_ReadRecord(DB, &out) != 0)
+	{
+		printf("\tError: expected empty DB after reading all valid records\n");
+		return false;
+	}
+
+	printf("\tNo valid record left after skipping corruption\n\n");
 	return true;
 }
 

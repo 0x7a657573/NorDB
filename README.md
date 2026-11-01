@@ -195,10 +195,14 @@ The public API is defined in `src/include/NorDB.h`.
 *   **`uint32_t NorDB_ReadRecord(NorDB_t *db, void *RecoedData)`:** Reads a record from the database.
     *   `db`: A pointer to the database instance.
     *   `RecoedData`: A pointer to a buffer to store the record data.
-    *   Returns the physical address of the record, or `0` on error.
+    *   Records that fail the CRC check are consumed, counted in `NorDB_Get_CrcErrorCount`, and skipped; the next valid unread record is returned.
+    *   Returns the physical address of the record, or `0` on error or when no valid unread record is left.
 *   **`uint32_t NorDB_Get_TotalUnreadRecord(NorDB_t *db)`:** Gets the number of unread records in the database.
     *   `db`: A pointer to the database instance.
     *   Returns the number of unread records.
+*   **`uint32_t NorDB_Get_CrcErrorCount(NorDB_t *db)`:** Gets the number of corrupt records skipped by `NorDB_ReadRecord`.
+    *   `db`: A pointer to the database instance.
+    *   Returns the CRC error count since the hardware layer was created.
 *   **`uint32_t NorDB_Get_FreeRecord(NorDB_t *db)`:** Gets the number of free records in the database.
     *   `db`: A pointer to the database instance.
     *   Returns the number of free records.

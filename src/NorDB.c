@@ -525,37 +525,39 @@ uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData)
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
 
-	uint32_t Record = NorDB_GetReadable_Record(db);
-	if(Record==0)
-	{
-		/*unlock io*/
-		NorDB_sem_Unlock(&hw->sema);
-		return 0;
-	}
-
 	uint8_t Temp_Buffer[db->Record_Size];
-	uint16_t Record_Crc = 0;
-	hw->ReadBuffer(hw->Param,Record,Temp_Buffer,db->Record_Size);
-	Record_Crc = Temp_Buffer[db->Record_Size-1];
-	NorDB_Set_Read_Header_In_sector(db,Record);
-	hw->TotalUnreadRecord--;
-
-	uint8_t Readback_Crc = NorDB_crc8x_fast(Temp_Buffer,db->Record_Size-1);
-
-	if(Record_Crc!=Readback_Crc)
+	while(1)
 	{
-		err_log("NorDB_ReadRecord failed: crc mismatch (stored=%u calc=%u) adr=%u\r\n",
-				Record_Crc, Readback_Crc, Record);
+		uint32_t Record = NorDB_GetReadable_Record(db);
+		if(Record==0)
+		{
+			/*unlock io*/
+			NorDB_sem_Unlock(&hw->sema);
+			return 0;
+		}
+
+		uint16_t Record_Crc = 0;
+		hw->ReadBuffer(hw->Param,Record,Temp_Buffer,db->Record_Size);
+		Record_Crc = Temp_Buffer[db->Record_Size-1];
+		NorDB_Set_Read_Header_In_sector(db,Record);
+		hw->TotalUnreadRecord--;
+
+		uint8_t Readback_Crc = NorDB_crc8x_fast(Temp_Buffer,db->Record_Size-1);
+
+		if(Record_Crc!=Readback_Crc)
+		{
+			err_log("NorDB_ReadRecord failed: crc mismatch (stored=%u calc=%u) adr=%u\r\n",
+					Record_Crc, Readback_Crc, Record);
+			hw->CrcErrorCount++;
+			continue; /*Not Valid Crc, skip to next unread record*/
+		}
+
+		nordb_memcpy(RecoedData,Temp_Buffer,db->Record_Size-1);
+		debug_log("NorDB_ReadRecord ok: adr=%u unread=%u\r\n", Record, hw->TotalUnreadRecord);
 		/*unlock io*/
 		NorDB_sem_Unlock(&hw->sema);
-		return 0; /*Not Valid Crc*/
+		return Record;
 	}
-
-	nordb_memcpy(RecoedData,Temp_Buffer,db->Record_Size-1);
-	debug_log("NorDB_ReadRecord ok: adr=%u unread=%u\r\n", Record, hw->TotalUnreadRecord);
-	/*unlock io*/
-	NorDB_sem_Unlock(&hw->sema);
-	return Record;
 }
 
 const char *NorDB_HwName(NorDB_t *db)
@@ -594,6 +596,23 @@ uint32_t NorDB_Get_TotalUnreadRecord(NorDB_t *db)
 	NorDB_sem_Unlock(&hw->sema);
 
 	return unread;
+}
+
+uint32_t NorDB_Get_CrcErrorCount(NorDB_t *db)
+{
+	if(db==NULL)	return 0;
+
+	NorDB_HWLayer *hw = db->DB_ll;
+
+	/*lock io*/
+	NorDB_sem_Lock(&hw->sema);
+
+	uint32_t count = hw->CrcErrorCount;
+
+	/*unlock io*/
+	NorDB_sem_Unlock(&hw->sema);
+
+	return count;
 }
 
 uint32_t NorDB_Get_FreeRecord(NorDB_t *db)
