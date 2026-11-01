@@ -19,6 +19,16 @@
 #define SerialNorFlash_ll_h
 #include "../NorDB.h"
 
+/*
+ * Max status register reads while waiting for the chip. Sector erase takes up
+ * to ~400 ms; the default covers that for polls as fast as ~0.1 us, so it never
+ * times out a healthy chip. On a slow bus (~2 us per poll) a dead chip is
+ * reported after ~8 s instead of hanging forever.
+ */
+#ifndef NORDB_FLASH_BUSY_MAX_POLL
+#define NORDB_FLASH_BUSY_MAX_POLL	4000000U
+#endif
+
 typedef enum
 {
 	UnkownFlash = 1,

@@ -233,6 +233,8 @@ The flash backend assumes the following flash geometry:
 *   **Sector Size:** 4096 bytes (4 KB)
 *   **Block Size:** 65536 bytes (64 KB)
 
+Waiting for a program or erase to finish is bounded to `NORDB_FLASH_BUSY_MAX_POLL` status register reads (default 4000000: covers the ~400 ms sector erase even at ~0.1 us per poll, so a healthy chip never times out). On timeout the operation returns `false`, which the core handles as an IO error instead of hanging; lower the macro if a dead chip must be detected faster on a slow bus.
+
 To use the flash backend, you need to provide an SPI implementation by creating a `SpiBus_t` struct and setting the `SPI_WriteRead` function pointer.
 
 ### RAM Backend

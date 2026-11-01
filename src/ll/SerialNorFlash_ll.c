@@ -113,7 +113,8 @@ void FLASH_WriteEnable(void *Param)
 	spi->SPI_WriteRead(spi->param,cmd,1,NULL,0);
 }
 
-void FLASH_WaitForWriteEnd(void *Param)
+/*false when the chip is still busy after NORDB_FLASH_BUSY_MAX_POLL status reads*/
+bool FLASH_WaitForWriteEnd(void *Param)
 {
 	FlashDev_t *FL =(FlashDev_t*) Param; 
 	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
@@ -122,10 +123,14 @@ void FLASH_WaitForWriteEnd(void *Param)
 	cmd[0] = 0x05;
 
 	//debug_info("w25qxx wait for flash ready\r\n");
-	do
+	for(uint32_t n=0; n<NORDB_FLASH_BUSY_MAX_POLL; n++)
 	{
 		spi->SPI_WriteRead(spi->param,cmd,1,&StatusRegister1,1);
-	} while ((StatusRegister1 & 0x01) == 0x01);
+		if((StatusRegister1 & 0x01) == 0x00)
+			return true;
+	}
+	err_log("w25qxx busy timeout after %u polls\r\n", NORDB_FLASH_BUSY_MAX_POLL);
+	return false;
 }
 
 bool FLASH_EraseSector(void *Param,uint32_t SectorAddr)
@@ -140,7 +145,11 @@ bool FLASH_EraseSector(void *Param,uint32_t SectorAddr)
 	SectorAddr += FL->StartOffset;
 	debug_info("w25qxx EraseSector %d Begin...\r\n", SectorAddr);
 	
-	FLASH_WaitForWriteEnd(Param);
+	if(!FLASH_WaitForWriteEnd(Param))
+	{
+		NorDB_sem_Unlock(&spi->xSemaphore);
+		return false;
+	}
 	FLASH_WriteEnable(Param);
 
 	uint8_t  cmd[8] = {0};
@@ -160,11 +169,11 @@ bool FLASH_EraseSector(void *Param,uint32_t SectorAddr)
 	cmd[i++] = (SectorAddr & 0xFF);
 	spi->SPI_WriteRead(spi->param,cmd,i,NULL,0);
 	
-	FLASH_WaitForWriteEnd(Param);
+	bool ok = FLASH_WaitForWriteEnd(Param);
 
 	debug_info("w25qxx EraseSector done.\r\n");
 	NorDB_sem_Unlock(&spi->xSemaphore);
-	return true;
+	return ok;
 }
 
 bool FLASH_ReadBuffer(void*Param, uint32_t ReadAddr, uint8_t *pBuffer,  uint16_t NumByteToRead)
@@ -200,14 +209,14 @@ bool FLASH_ReadBuffer(void*Param, uint32_t ReadAddr, uint8_t *pBuffer,  uint16_t
 	return true;
 }
 
-static inline void FLASH_WritePage(void*Param,uint32_t address,uint8_t *data,uint16_t len)
+static inline bool FLASH_WritePage(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
 	FlashDev_t *FL =(FlashDev_t*) Param; 
 	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
 
 	/*a page program can not cross a page*/
 	if(len > FLASH_PAGE_SIZE)
-		return;
+		return false;
 
 	FLASH_WriteEnable(Param);
 	
@@ -233,7 +242,7 @@ static inline void FLASH_WritePage(void*Param,uint32_t address,uint8_t *data,uin
 
 	spi->SPI_WriteRead(spi->param,cmd,i,NULL,0);
 	
-	FLASH_WaitForWriteEnd(Param);
+	return FLASH_WaitForWriteEnd(Param);
 }
 
 bool FLASH_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
@@ -259,29 +268,30 @@ bool FLASH_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
     uint32_t Offset_end_Page = remaining_byte % page_size;
     
 	uint8_t *dptr = data;
+	bool ok = true;
     if(start_page_wbyte)
     {
         debug_info("Write %i Byte in page %i from adr %i\r\n",start_page_wbyte, start_page,start_page_offset);
-		FLASH_WritePage(Param,start_page * page_size + start_page_offset,dptr, start_page_wbyte);
+		ok = FLASH_WritePage(Param,start_page * page_size + start_page_offset,dptr, start_page_wbyte);
 		dptr+=start_page_wbyte;
     }
     
-    for(int i=0;i<complete_page;i++)
+    for(int i=0;ok && i<complete_page;i++)
     {
         debug_info("Write page(255 byte) in page %i\r\n",start_page+1+i);
-		FLASH_WritePage(Param,(start_page+1+i) * page_size ,dptr, page_size);
+		ok = FLASH_WritePage(Param,(start_page+1+i) * page_size ,dptr, page_size);
 		dptr+=page_size;
     }
     
-    if(Offset_end_Page)
+    if(ok && Offset_end_Page)
     {
         debug_info("Write %i Byte in page %i\r\n",Offset_end_Page,start_page+1+complete_page);
-		FLASH_WritePage(Param,(start_page+1+complete_page) * page_size ,dptr, Offset_end_Page);
+		ok = FLASH_WritePage(Param,(start_page+1+complete_page) * page_size ,dptr, Offset_end_Page);
     }
 
 	debug_info("w25qxx Write done.\r\n");
 	NorDB_sem_Unlock(&spi->xSemaphore);
-	return true;
+	return ok;
 }
 
 uint8_t FLASH_flashCheck(void*Param)
