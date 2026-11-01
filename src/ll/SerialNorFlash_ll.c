@@ -20,6 +20,8 @@
 
 #define debug_info 	//printf
 
+#define FLASH_PAGE_SIZE	256
+
 bool Searching_ForDevice(SpiBus_t *spi)
 {
 	uint8_t wr_buff[32]={0x9f};
@@ -85,7 +87,7 @@ bool Searching_ForDevice(SpiBus_t *spi)
 		return false;
 	}
 
-	spi->DevOnBus->PageSize = 256;
+	spi->DevOnBus->PageSize = FLASH_PAGE_SIZE;
 	spi->DevOnBus->SectorSize = 0x1000;
 	spi->DevOnBus->SectorCount = spi->DevOnBus->BlockCount * 16;
 	spi->DevOnBus->PageCount = (spi->DevOnBus->SectorCount * spi->DevOnBus->SectorSize) / spi->DevOnBus->PageSize;
@@ -195,9 +197,14 @@ static inline void FLASH_WritePage(void*Param,uint32_t address,uint8_t *data,uin
 	FlashDev_t *FL =(FlashDev_t*) Param; 
 	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
 
+	/*a page program can not cross a page*/
+	if(len > FLASH_PAGE_SIZE)
+		return;
+
 	FLASH_WriteEnable(Param);
 	
-	uint8_t cmd[512] = {0};
+	/*opcode + 32bit address + page data*/
+	uint8_t cmd[1 + 4 + FLASH_PAGE_SIZE];
 	uint32_t i = 0;
 
 	if (spi->DevOnBus->ID >= W25Q256)

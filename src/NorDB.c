@@ -275,6 +275,24 @@ uint32_t NorDB_GetWriteable_Record(NorDB_t *db)
 	return 0;
 }
 
+/*CRC of a stored record payload, read in small chunks (no record sized buffer)*/
+static uint8_t NorDB_Calc_Stored_Crc(NorDB_t *db, uint32_t Adr)
+{
+	NorDB_HWLayer *hw = db->DB_ll;
+	uint8_t Chunk[16];
+	const uint16_t ChunkSize = sizeof(Chunk);
+	uint16_t PayloadLen = db->Record_Size-1;
+	unsigned Crc = 0xFF;
+	for(uint16_t Done=0; Done<PayloadLen; )
+	{
+		uint16_t n = (PayloadLen-Done) < ChunkSize ? (PayloadLen-Done):ChunkSize;
+		hw->ReadBuffer(hw->Param,Adr+Done,Chunk,n);
+		Crc = NorDB_crc8x_update(Crc,Chunk,n);
+		Done += n;
+	}
+	return Crc;
+}
+
 /*power loss can leave only the newest slot marked unread without payload*/
 static bool NorDB_Repair_LastWrite_Record(NorDB_t *db)
 {
@@ -292,23 +310,14 @@ static bool NorDB_Repair_LastWrite_Record(NorDB_t *db)
 		return false;
 
 	uint32_t Adr = (hw->LastWriteSector*hw->SectorSize) + db->Header_Size + (Last * db->Record_Size);
-	uint8_t Chunk[16];
-	const uint16_t ChunkSize = sizeof(Chunk);
-	uint16_t PayloadLen = db->Record_Size-1;
-	unsigned Crc = 0xFF;
-	for(uint16_t Done=0; Done<PayloadLen; )
-	{
-		uint16_t n = (PayloadLen-Done) < ChunkSize ? (PayloadLen-Done):ChunkSize;
-		hw->ReadBuffer(hw->Param,Adr+Done,Chunk,n);
-		Crc = NorDB_crc8x_update(Crc,Chunk,n);
-		Done += n;
-	}
-	hw->ReadBuffer(hw->Param,Adr+PayloadLen,Chunk,1);
-	if(Crc == Chunk[0])
+	uint8_t Stored;
+	uint8_t Crc = NorDB_Calc_Stored_Crc(db,Adr);
+	hw->ReadBuffer(hw->Param,Adr+db->Record_Size-1,&Stored,1);
+	if(Crc == Stored)
 		return false;
 
 	err_log("NorDB sync: incomplete record dropped (stored=%u calc=%u) adr=%u\r\n",
-			Chunk[0], Crc, Adr);
+			Stored, Crc, Adr);
 	NorDB_Set_Read_Header_In_sector(db,Adr);
 	hw->CrcErrorCount++;
 	return true;
@@ -577,9 +586,6 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
 
-
-	uint8_t Temp_Buffer[db->Record_Size];
-
  	uint32_t Record = NorDB_GetWriteable_Record(db);
 	if(Record==0)
 	{
@@ -594,14 +600,14 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
 
 
 	uint8_t Record_Crc = NorDB_crc8x_fast(RecoedData,db->Record_Size-1);
-	nordb_memcpy(Temp_Buffer,RecoedData,db->Record_Size-1);
-	Temp_Buffer[db->Record_Size-1] = Record_Crc;
-	hw->WriteBuffer(hw->Param,Record,Temp_Buffer,db->Record_Size);
+	/*payload first, crc last*/
+	hw->WriteBuffer(hw->Param,Record,(uint8_t*)RecoedData,db->Record_Size-1);
+	hw->WriteBuffer(hw->Param,Record+db->Record_Size-1,&Record_Crc,1);
 
 
-	nordb_memset((char*)Temp_Buffer,0,db->Record_Size);
-	hw->ReadBuffer(hw->Param,Record,Temp_Buffer,db->Record_Size);
-	uint8_t ReadBack_Crc = NorDB_crc8x_fast(Temp_Buffer,db->Record_Size-1);
+	uint8_t ReadBack_Crc = NorDB_Calc_Stored_Crc(db,Record);
+	uint8_t Stored_Crc = 0;
+	hw->ReadBuffer(hw->Param,Record+db->Record_Size-1,&Stored_Crc,1);
 
 	if(Record_Crc!=ReadBack_Crc) /*Read Back Data Faild*/
 	{
@@ -615,10 +621,10 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
 	}
 
 
-	if(Record_Crc!=Temp_Buffer[db->Record_Size-1]) /*Read Back Data Faild*/
+	if(Record_Crc!=Stored_Crc) /*Read Back Data Faild*/
 	{
 		err_log("NorDB_AddRecord failed: stored crc mismatch (w=%u stored=%u) adr=%u\r\n",
-				Record_Crc, Temp_Buffer[db->Record_Size-1], Record);
+				Record_Crc, Stored_Crc, Record);
 		NorDB_Set_Read_Header_In_sector(db,Record); /*Mark Az Read*/
 		/*unlock io*/
 		NorDB_sem_Unlock(&hw->sema);
@@ -648,7 +654,6 @@ uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData)
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
 
-	uint8_t Temp_Buffer[db->Record_Size];
 	while(1)
 	{
 		uint32_t Record = NorDB_GetReadable_Record(db);
@@ -659,13 +664,13 @@ uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData)
 			return 0;
 		}
 
-		uint16_t Record_Crc = 0;
-		hw->ReadBuffer(hw->Param,Record,Temp_Buffer,db->Record_Size);
-		Record_Crc = Temp_Buffer[db->Record_Size-1];
+		uint8_t Record_Crc = 0;
+		hw->ReadBuffer(hw->Param,Record,(uint8_t*)RecoedData,db->Record_Size-1);
+		hw->ReadBuffer(hw->Param,Record+db->Record_Size-1,&Record_Crc,1);
 		NorDB_Set_Read_Header_In_sector(db,Record);
 		hw->TotalUnreadRecord--;
 
-		uint8_t Readback_Crc = NorDB_crc8x_fast(Temp_Buffer,db->Record_Size-1);
+		uint8_t Readback_Crc = NorDB_crc8x_fast(RecoedData,db->Record_Size-1);
 
 		if(Record_Crc!=Readback_Crc)
 		{
@@ -675,7 +680,6 @@ uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData)
 			continue; /*Not Valid Crc, skip to next unread record*/
 		}
 
-		nordb_memcpy(RecoedData,Temp_Buffer,db->Record_Size-1);
 		debug_log("NorDB_ReadRecord ok: adr=%u unread=%u\r\n", Record, hw->TotalUnreadRecord);
 		/*unlock io*/
 		NorDB_sem_Unlock(&hw->sema);
