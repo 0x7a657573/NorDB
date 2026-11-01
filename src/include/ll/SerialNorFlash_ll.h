@@ -46,6 +46,7 @@ typedef struct
 	uint32_t 	BlockSize;
 }SpiDev_t;
 
+/*SpiBus_t must be zero-initialized before the first FlashDB_Init*/
 typedef struct
 {
 	void *param;
@@ -53,6 +54,7 @@ typedef struct
 	
 	NorDB_sem_t	 xSemaphore;
 	SpiDev_t	*DevOnBus;
+	uint16_t	 RefCount;	/*FlashDB handles using DevOnBus*/
 }SpiBus_t;
 
 typedef struct

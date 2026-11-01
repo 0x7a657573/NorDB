@@ -14,6 +14,7 @@
 typedef sem_t	NorDB_sem_t;
 
 bool NorDB_sem_init(NorDB_sem_t *sem);
+void NorDB_sem_destroy(NorDB_sem_t *sem);
 void NorDB_sem_Lock(NorDB_sem_t *sem);
 void NorDB_sem_Unlock(NorDB_sem_t *sem);
 

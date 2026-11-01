@@ -119,7 +119,7 @@ NorDB_HWLayer *Filell_Init(char *path,uint16_t SectorSize,uint16_t TotalSector)
 	Filell_t *Filesw = nordb_malloc(sizeof(Filell_t));
 	if(Filesw==NULL)
 	{
-		nordb_free(Filesw);
+		nordb_free(Filehw);
 		return NULL;
 	}
 
@@ -141,14 +141,18 @@ NorDB_HWLayer *Filell_Init(char *path,uint16_t SectorSize,uint16_t TotalSector)
 
 	if(Filell_CheckFileSize(Filesw)==false)
     {
-        Filell_Del(Filehw);
+		nordb_fclose(Filesw->fileid);
+		nordb_free(Filesw);
+		nordb_free(Filehw);
 		return NULL;
     }
 
 	/*init sema*/
 	if(!NorDB_sem_init(&Filehw->sema))
 	{
-		Filell_Del(Filehw);
+		nordb_fclose(Filesw->fileid);
+		nordb_free(Filesw);
+		nordb_free(Filehw);
 		return NULL;
 	}
 
@@ -167,6 +171,8 @@ NorDB_HWLayer *Filell_Init(char *path,uint16_t SectorSize,uint16_t TotalSector)
 
 void Filell_Del(NorDB_HWLayer *fdb)
 {
+	if(fdb==NULL)	return;
+
     if(fdb->Param)
     {
         Filell_t *ptr = (Filell_t*)fdb->Param;
@@ -177,5 +183,6 @@ void Filell_Del(NorDB_HWLayer *fdb)
         }
         nordb_free(fdb->Param);
     }
+	NorDB_sem_destroy(&fdb->sema);
     nordb_free(fdb);
 }

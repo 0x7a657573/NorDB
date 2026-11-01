@@ -10,8 +10,12 @@
 
 bool NorDB_sem_init(NorDB_sem_t *sem)
 {
-	sem_init(sem, 0, 1);
-	return true;
+	return sem_init(sem, 0, 1) == 0;
+}
+
+void NorDB_sem_destroy(NorDB_sem_t *sem)
+{
+	sem_destroy(sem);
 }
 
 void NorDB_sem_Lock(NorDB_sem_t *sem)

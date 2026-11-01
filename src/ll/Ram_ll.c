@@ -81,7 +81,9 @@ NorDB_HWLayer *Ramll_Init(uint16_t SectorSize,uint16_t TotalSector)
 	/*init sema*/
 	if(!NorDB_sem_init(&Ramhw->sema))
 	{
-		Ramll_Del(Ramhw);
+		nordb_free(Ramsw->Buffer);
+		nordb_free(Ramsw);
+		nordb_free(Ramhw);
 		return NULL;
 	}
 
@@ -100,7 +102,13 @@ NorDB_HWLayer *Ramll_Init(uint16_t SectorSize,uint16_t TotalSector)
 
 void Ramll_Del(NorDB_HWLayer *db)
 {
-	nordb_free((((Ramll_t*)db->Param)->Buffer));
-	nordb_free(db->Param);
+	if(db==NULL)	return;
+
+	if(db->Param)
+	{
+		nordb_free((((Ramll_t*)db->Param)->Buffer));
+		nordb_free(db->Param);
+	}
+	NorDB_sem_destroy(&db->sema);
 	nordb_free(db);
 }

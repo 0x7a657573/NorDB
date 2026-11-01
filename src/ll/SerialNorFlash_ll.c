@@ -282,38 +282,12 @@ const char *FLASH_DriverName(void*Param)
 
 NorDB_HWLayer *FlashDB_Init(uint16_t StartSector,uint16_t TotalSector,SpiBus_t *spi)
 {
-	if(!spi) return NULL;
+	if(!spi || TotalSector==0) return NULL;
 
+	bool NewBus = false;
 	NorDB_HWLayer *FlashLL = nordb_malloc(sizeof(NorDB_HWLayer));
 	if(FlashLL==NULL)	return NULL;
 	nordb_memset(FlashLL,0,sizeof(NorDB_HWLayer));
-
-	/*Check Device on Bus*/
-	if(!spi->DevOnBus)
-	{
-		/*Searching bus for Flash Device*/
-		spi->DevOnBus = nordb_malloc(sizeof(SpiDev_t));
-		if(!spi->DevOnBus)
-		{
-			nordb_free(FlashLL);
-			return NULL;
-		}
-
-		/*init Semaphore*/
-		if(!NorDB_sem_init(&spi->xSemaphore))
-		{
-			Flashll_Del(FlashLL);
-			return NULL;
-		}
-
-		if(!Searching_ForDevice(spi))
-		{
-			Flashll_Del(FlashLL);
-			nordb_free(spi->DevOnBus);
-			return NULL;
-		}
-	}	
-
 
 	FlashDev_t *FL = nordb_malloc(sizeof(FlashDev_t));
 	if(FL==NULL)
@@ -323,12 +297,35 @@ NorDB_HWLayer *FlashDB_Init(uint16_t StartSector,uint16_t TotalSector,SpiBus_t *
 	}
 	nordb_memset(FL,0,sizeof(FlashDev_t));
 
+	/*Check Device on Bus*/
+	if(!spi->DevOnBus)
+	{
+		/*Searching bus for Flash Device*/
+		spi->DevOnBus = nordb_malloc(sizeof(SpiDev_t));
+		if(!spi->DevOnBus)
+			goto err_free;
+		nordb_memset(spi->DevOnBus,0,sizeof(SpiDev_t));
+
+		/*init Semaphore*/
+		if(!NorDB_sem_init(&spi->xSemaphore))
+		{
+			nordb_free(spi->DevOnBus);
+			spi->DevOnBus = NULL;
+			goto err_free;
+		}
+		NewBus = true;
+
+		if(!Searching_ForDevice(spi))
+			goto err_bus;
+	}
+
+	if(((uint32_t)StartSector + TotalSector) > spi->DevOnBus->SectorCount)
+		goto err_bus;
+
 	/*init sema*/
 	if(!NorDB_sem_init(&FlashLL->sema))
-	{
-		Flashll_Del(FlashLL);
-		return NULL;
-	}
+		goto err_bus;
+
 	FL->SectorSize  = spi->DevOnBus->SectorSize;
 	FL->SPI 	    = spi;
 	FL->StartOffset = StartSector * FL->SectorSize;
@@ -343,19 +340,41 @@ NorDB_HWLayer *FlashDB_Init(uint16_t StartSector,uint16_t TotalSector,SpiBus_t *
 	FlashLL->DriverCheck	= FLASH_flashCheck;
 	FlashLL->DriverName		= FLASH_DriverName;
 
+	spi->RefCount++;
 	return FlashLL;
+
+err_bus:
+	/*undo the bus setup done by this call only*/
+	if(NewBus)
+	{
+		NorDB_sem_destroy(&spi->xSemaphore);
+		nordb_free(spi->DevOnBus);
+		spi->DevOnBus = NULL;
+	}
+err_free:
+	nordb_free(FL);
+	nordb_free(FlashLL);
+	return NULL;
 }
 
 void Flashll_Del(NorDB_HWLayer *db)
 {
-	FlashDev_t *FL =(FlashDev_t*) db->Param; 
-	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+	if(db==NULL)	return;
 
-	nordb_free(spi->DevOnBus);
-	nordb_free(FL);
+	FlashDev_t *FL =(FlashDev_t*) db->Param; 
+	if(FL)
+	{
+		SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+		if(spi->RefCount>0)
+			spi->RefCount--;
+		if(spi->RefCount==0 && spi->DevOnBus)
+		{
+			NorDB_sem_destroy(&spi->xSemaphore);
+			nordb_free(spi->DevOnBus);
+			spi->DevOnBus = NULL;
+		}
+		nordb_free(FL);
+	}
+	NorDB_sem_destroy(&db->sema);
 	nordb_free(db);
 }
-
-
-
-

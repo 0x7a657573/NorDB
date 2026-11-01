@@ -32,10 +32,9 @@ int main(int argc, char **argv)
 	CH341DeviceInit();
 	srand(time(NULL));
 	
-	SpiBus_t xSPI;
+	SpiBus_t xSPI = {0};
 	void (*SPI_WriteRead)(void *param,uint8_t *out,uint16_t wlen,uint8_t *in,uint16_t rlen);
 	xSPI.param = NULL;
-	xSPI.DevOnBus = NULL;
 	xSPI.SPI_WriteRead = xSPI_WriteRead;
 
 	uint32_t partition = 0;
