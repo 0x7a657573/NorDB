@@ -14,7 +14,7 @@
 									 Header->Vertion==NorDB_RVer && \
 									 Header->RecordSize==db->Record_Size)
 
-void NorDB_SyncData(NorDB_t *db);
+bool NorDB_SyncData(NorDB_t *db);
 void NorDB_Set_Read_Header_In_sector(NorDB_t *db,uint32_t Point_Adr);
 
 static inline void NorDB_LogHeaderMismatch(NorDB_t *db, uint16_t sector, NorDB_Header_t *Header, const char *where)
@@ -103,6 +103,13 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 		nordb_free(DB);
 		return NULL;
 	}
+	if(hw->Synced && hw->RecordSize != DB->Record_Size)
+	{
+		err_log("NorDB init failed: storage in use with record_size=%u, requested=%u\r\n",
+				hw->RecordSize, DB->Record_Size);
+		nordb_free(DB);
+		return NULL;
+	}
 	
 	uint32_t max_record_in_sector = (((hw->SectorSize - (sizeof(NorDB_Header_t))) / DB->Record_Size) + 1);
 	uint32_t header_space_for_status = max_record_in_sector / 4 + 1;
@@ -118,7 +125,11 @@ NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize)
 
 	if(!hw->Synced)
 	{
-		NorDB_SyncData(DB);
+		if(!NorDB_SyncData(DB))
+		{
+			NorDB_Destroy(DB);
+			return NULL;
+		}
 	}
 
 	info_log("NorDB init done: header_size=%u record_size_crc=%u rec_per_sector=%u unread=%u last_w=%u last_r=%u\r\n",
@@ -279,10 +290,10 @@ static bool NorDB_Repair_LastWrite_Record(NorDB_t *db)
 	return true;
 }
 
-void NorDB_SyncData(NorDB_t *db)
+bool NorDB_SyncData(NorDB_t *db)
 {
 	if(db==NULL)
-		return;
+		return false;
 
 	uint32_t UnreadRecord = 0;
 
@@ -293,6 +304,9 @@ void NorDB_SyncData(NorDB_t *db)
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
 	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
+	uint32_t OldSyncCounter = hw->SyncCounter;
+	uint16_t OldLastWriteSector = hw->LastWriteSector;
+	uint16_t OldLastReadSector = hw->LastReadSector;
 	hw->SyncCounter = 0;
 	uint32_t LastRead = UINT32_MAX;
 	hw->LastWriteSector = 0;
@@ -301,6 +315,20 @@ void NorDB_SyncData(NorDB_t *db)
 	{
 		/*read header*/
 		hw->ReadBuffer(hw->Param,(i*hw->SectorSize),(uint8_t*)Header,db->Header_Size);
+
+		/*another firmware/config wrote this sector, never format it*/
+		if(Header->Magic==NorDB_Magic &&
+		   (Header->Vertion!=NorDB_RVer || Header->RecordSize!=db->Record_Size))
+		{
+			err_log("NorDB sync failed: incompatible sector sec=%u ver=0x%04x (exp 0x%04x) rec=%u (exp %u)\r\n",
+					i, Header->Vertion, (uint16_t)NorDB_RVer, Header->RecordSize, db->Record_Size);
+			hw->SyncCounter = OldSyncCounter;
+			hw->LastWriteSector = OldLastWriteSector;
+			hw->LastReadSector = OldLastReadSector;
+			/*unlock io*/
+			NorDB_sem_Unlock(&hw->sema);
+			return false;
+		}
 
 		/*not init sector*/
 		if(!Is_TrueHeader(db,Header))
@@ -348,11 +376,13 @@ void NorDB_SyncData(NorDB_t *db)
 	}
 
 	hw->TotalUnreadRecord = UnreadRecord;
+	hw->RecordSize = db->Record_Size;
 	hw->Synced = true;
 	/*unlock io*/
 	NorDB_sem_Unlock(&hw->sema);
 	info_log("NorDB sync done: unread=%u sync=%u last_w=%u last_r=%u\r\n",
 			hw->TotalUnreadRecord, hw->SyncCounter, hw->LastWriteSector, hw->LastReadSector);
+	return true;
 }
 
 uint32_t NorDB_Find_First_Unread_point_in_Sector(NorDB_t *db ,uint32_t Start_Sector_Search,NorDB_Header_t *Header)
@@ -488,6 +518,29 @@ bool NorDB_Clear(NorDB_t *db)
 	NorDB_SyncData(db);
 	info_log("NorDB clear done: unread=%u\r\n", hw->TotalUnreadRecord);
 
+	return true;
+}
+
+bool NorDB_Format(NorDB_HWLayer *hw)
+{
+	if(hw==NULL)
+		return false;
+
+	/*lock io*/
+	NorDB_sem_Lock(&hw->sema);
+
+	for(uint32_t i=0; i<hw->SectorNumber; i++)
+		hw->SectorErace(hw->Param,i*hw->SectorSize);
+
+	hw->Synced = false;
+	hw->SyncCounter = 0;
+	hw->LastWriteSector = 0;
+	hw->LastReadSector = 0;
+	hw->TotalUnreadRecord = 0;
+	hw->RecordSize = 0;
+
+	/*unlock io*/
+	NorDB_sem_Unlock(&hw->sema);
 	return true;
 }
 

@@ -25,6 +25,7 @@ typedef struct
 	uint32_t SyncCounter;
 	uint16_t LastWriteSector;
 	uint16_t LastReadSector;
+	uint16_t RecordSize;	/*record size (incl. crc) of the synced storage*/
 
 	void 	*Param;
 	void 	(*SectorErace)(void*Param,uint32_t address);
@@ -60,6 +61,7 @@ typedef struct __attribute__((__packed__))
 
 NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize);
 bool	 NorDB_Clear(NorDB_t *db);
+bool	 NorDB_Format(NorDB_HWLayer *hw);
 uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData);
 uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData);
 uint32_t NorDB_Get_TotalUnreadRecord(NorDB_t *db);

@@ -8,6 +8,7 @@ NorDB is a lightweight, sector-based FIFO (First-In-First-Out) queue database sp
 
 * This library is optimized for append-only FIFO workloads. It is not intended for random updates.
 * The backend must provide at least 2 sectors (`NorDB()` returns `NULL` otherwise): a sector can only be erased and reused by moving to another one.
+* `NorDB()` refuses storage written with another record size or format version instead of erasing it; call `NorDB_Format()` to start over.
 * Each stored record is `RecordSize + 1` bytes on storage (one CRC8 byte is appended internally).
 * The sector header is identified by `NorDB_Magic = 0x0766` and `NorDB_RVer = 0x0002`.
 * `NorDB_Clear()` performs a logical clear (marks unread records as read). Physical erase happens lazily when a fully-consumed sector is reused.
@@ -184,7 +185,10 @@ The public API is defined in `src/include/NorDB.h`.
 *   **`NorDB_t *NorDB(NorDB_HWLayer *hw, uint16_t RecordSize)`:** Initializes a new database instance.
     *   `hw`: A pointer to the hardware abstraction layer.
     *   `RecordSize`: The size of a single record.
-    *   Returns a pointer to the new database instance, or `NULL` on error.
+    *   Returns a pointer to the new database instance, or `NULL` on error. It also fails if the storage holds sectors written with another record size or version (data is never formatted automatically), or if the storage is already in use with a different record size. Use `NorDB_Format()` to discard such data deliberately.
+*   **`bool NorDB_Format(NorDB_HWLayer *hw)`:** Physically erases every sector and resets the runtime state, so the next `NorDB()` starts with an empty database. All stored records are lost.
+    *   `hw`: A pointer to the hardware abstraction layer.
+    *   Returns `true` on success, or `false` if `hw` is `NULL`.
 *   **`bool NorDB_Clear(NorDB_t *db)`:** Clears the database logically by marking all unread records as read.
     *   `db`: A pointer to the database instance.
     *   Note: This does not necessarily perform a physical erase of all sectors. Sectors are erased lazily when reused.

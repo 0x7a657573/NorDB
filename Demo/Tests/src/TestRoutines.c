@@ -809,6 +809,104 @@ bool FreeRecord_Accuracy_Test(NorDB_t *DB, char *name, int count)
 	return true;
 }
 
+bool IncompatibleHeader_Test(NorDB_t *DB, char *name, int count)
+{
+	(void)count;
+	dummy_t r[3], out;
+	strcpy(name, "Incompatible Header");
+
+	printf("--->NorDB Incompatible Header Test\n");
+
+	NorDB_HWLayer *hw = DB->DB_ll;
+	uint16_t size = GetDummyRecordSize();
+
+	NorDB_Clear(DB);
+	for (int i = 0; i < 3; i++)
+	{
+		get_RandomRecord(&r[i]);
+		if (NorDB_AddRecord(DB, &r[i]) == 0)
+		{
+			printf("\tError: failed to add record %d\n", i);
+			return false;
+		}
+	}
+
+	/* (1) storage in use with another size */
+	if (NorDB(hw, size + 1) != NULL)
+	{
+		printf("\tError: NorDB() accepted another record size on synced storage\n");
+		return false;
+	}
+	printf("\tOther record size rejected on synced storage\n");
+
+	/* (2) not synced: the scan must refuse and keep the data */
+	hw->Synced = false;
+	if (NorDB(hw, size + 1) != NULL)
+	{
+		printf("\tError: NorDB() accepted storage written with another record size\n");
+		return false;
+	}
+	hw->Synced = true;
+	if (NorDB_Get_TotalUnreadRecord(DB) != 3)
+	{
+		printf("\tError: unread count changed to %u\n", NorDB_Get_TotalUnreadRecord(DB));
+		return false;
+	}
+	for (int i = 0; i < 3; i++)
+	{
+		if (NorDB_ReadRecord(DB, &out) == 0 || memcmp(&out, &r[i], sizeof(out)) != 0)
+		{
+			printf("\tError: record %d lost after rejected NorDB()\n", i);
+			return false;
+		}
+	}
+	printf("\tOther record size rejected on stored data, data intact\n");
+
+	/* (3) deliberate format */
+	if (!NorDB_Format(hw))
+	{
+		printf("\tError: NorDB_Format failed\n");
+		return false;
+	}
+	NorDB_t *DB2 = NorDB(hw, size);
+	if (DB2 == NULL)
+	{
+		printf("\tError: failed to re-create DB after format\n");
+		return false;
+	}
+	bool ok = false;
+	if (NorDB_Get_TotalUnreadRecord(DB2) != 0)
+	{
+		printf("\tError: DB not empty after format (%u)\n", NorDB_Get_TotalUnreadRecord(DB2));
+		goto done;
+	}
+	get_RandomRecord(&r[0]);
+	if (NorDB_AddRecord(DB2, &r[0]) == 0 || NorDB_ReadRecord(DB2, &out) == 0 ||
+		memcmp(&out, &r[0], sizeof(out)) != 0)
+	{
+		printf("\tError: DB not usable after format\n");
+		goto done;
+	}
+	ok = true;
+
+done:
+	NorDB_Destroy(DB2);
+	if (!ok)
+		return false;
+
+	/* the original handle must still work */
+	get_RandomRecord(&r[1]);
+	if (NorDB_AddRecord(DB, &r[1]) == 0 || NorDB_ReadRecord(DB, &out) == 0 ||
+		memcmp(&out, &r[1], sizeof(out)) != 0)
+	{
+		printf("\tError: original DB not usable after format\n");
+		return false;
+	}
+	NorDB_Clear(DB);
+	printf("\tFormat recovered the storage\n\n");
+	return true;
+}
+
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)
 {
     char testName[20] = {0};
