@@ -198,6 +198,15 @@ static bool NorDB_Init_Sector(NorDB_t *db, int Sector)
 
 	debug_log("NorDB_Init_Sector: sec=%d erase+write header\r\n", Sector);
 
+	/*
+	 * invalidate the old header first: an erase is not atomic, power loss in the
+	 * middle could keep a valid Magic with part of the read marks back to unread
+	 * and consumed records would be delivered again. Programming only clears bits.
+	 */
+	uint16_t Dead = 0;
+	if(!NorDB_Hw_Write(hw,(Sector*hw->SectorSize),(uint8_t*)&Dead,sizeof(Dead)))
+		return false;
+
 	/*erase sector*/
 	if(!NorDB_Hw_Erase(hw,Sector*hw->SectorSize))
 		return false;

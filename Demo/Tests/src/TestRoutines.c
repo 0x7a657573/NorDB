@@ -1101,6 +1101,95 @@ done:
 	return ok;
 }
 
+bool PowerLoss_Erase_Test(NorDB_t *DB, char *name, int count)
+{
+	(void)count;
+	strcpy(name, "PowerLoss Erase");
+
+	printf("--->NorDB Power Loss Sector Erase Test\n");
+
+	NorDB_HWLayer *hw = DB->DB_ll;
+	uint32_t per_sector = DB->Record_NumberInSector;
+	uint32_t w = 0, r = 0, got = 0, n = 0;
+
+	/* sector aligned start: the last written sector is full, everything is read */
+	FreeRecord_Prepare(DB);
+	uint32_t old = hw->LastWriteSector;
+
+	/* the next sector holds one full sector of unread records */
+	r = w;
+	n = Fifo_Write(DB, &w, per_sector);
+	if (n != per_sector || hw->LastWriteSector == old)
+	{
+		printf("\tError: wrote %u of %u records\n", n, per_sector);
+		return false;
+	}
+
+	/* interrupted reuse of the consumed sector: Magic already zeroed, erase cut short */
+	uint16_t dead = 0;
+	hw->WriteBuffer(hw->Param, old * hw->SectorSize, (uint8_t*)&dead, sizeof(dead));
+	uint32_t seed = 12345;
+	for (uint32_t off = sizeof(dead); off < hw->SectorSize; off += 32)
+	{
+		uint8_t buf[32];
+		uint16_t len = (hw->SectorSize - off) < sizeof(buf) ? (hw->SectorSize - off) : sizeof(buf);
+		hw->ReadBuffer(hw->Param, old * hw->SectorSize + off, buf, len);
+		for (uint16_t i = 0; i < len; i++)
+			for (int k = 0; k < 8; k++)
+			{
+				seed = seed * 1103515245u + 12345u;
+				if (((seed >> 16) & 0xFF) < 51)		/* ~20% of the bits back to 1 */
+					buf[i] |= (uint8_t)(1 << k);
+			}
+		hw->WriteBuffer(hw->Param, old * hw->SectorSize + off, buf, len);
+	}
+
+	/* reboot */
+	hw->Synced = false;
+	NorDB_t *DB2 = NorDB(hw, GetDummyRecordSize());
+	if (DB2 == NULL)
+	{
+		printf("\tError: DB refused to open after interrupted erase\n");
+		return false;
+	}
+
+	bool ok = false;
+	if (NorDB_Get_TotalUnreadRecord(DB2) != per_sector)
+	{
+		printf("\tError: expected %u unread, got %u\n", per_sector, NorDB_Get_TotalUnreadRecord(DB2));
+		goto done;
+	}
+	if (!Fifo_Read(DB2, &r, UINT32_MAX, &got) || got != per_sector)
+	{
+		printf("\tError: read %u of %u records back\n", got, per_sector);
+		goto done;
+	}
+	printf("\tNo consumed record delivered again, unread records intact and in order\n");
+
+	/* keep writing across the interrupted sector, two full laps */
+	for (int lap = 0; lap < 2; lap++)
+	{
+		n = Fifo_Write(DB2, &w, UINT32_MAX);
+		if (n < per_sector || !Fifo_Read(DB2, &r, UINT32_MAX, &got) || got != n)
+		{
+			printf("\tError: lap %d failed (written %u read %u)\n", lap, n, got);
+			goto done;
+		}
+	}
+	if (r != w)
+	{
+		printf("\tError: wrote %u records but read %u\n", w, r);
+		goto done;
+	}
+	printf("\tWriting continues across the interrupted sector in order\n\n");
+	ok = true;
+
+done:
+	NorDB_Destroy(DB2);
+	NorDB_Clear(DB);
+	return ok;
+}
+
 bool InitParams_Test(NorDB_t *DB, char *name, int count)
 {
 	(void)count;
