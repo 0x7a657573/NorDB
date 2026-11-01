@@ -26,4 +26,5 @@ bool PowerLoss_PhantomRecord_Test(NorDB_t *DB, char *name, int count);
 bool FreeRecord_Accuracy_Test(NorDB_t *DB, char *name, int count);
 bool IncompatibleHeader_Test(NorDB_t *DB, char *name, int count);
 bool FifoOrder_Wrap_Test(NorDB_t *DB, char *name, int count);
+bool PowerLoss_SectorHeader_Test(NorDB_t *DB, char *name, int count);
 #endif /* READ_WRITE_H_ */

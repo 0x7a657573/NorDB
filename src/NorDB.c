@@ -7,6 +7,7 @@
 
 #include "NorDB.h"
 #include <string.h>
+#include <stddef.h>
 
 #define nordb_GetBitStatus(bytes,index) ((bytes[index/4]>>((index*2)%8))&0b11)
 
@@ -179,8 +180,15 @@ bool NorDB_Init_Sector(NorDB_t *db, int Sector)
 	Header.SyncCounter = hw->SyncCounter;
 	Header.RecordSize = db->Record_Size;
 
-	/*write header*/
-	hw->WriteBuffer(hw->Param,(Sector*hw->SectorSize),(uint8_t*)&Header,sizeof(NorDB_Header_t));
+	/*
+	 * write header body first and Magic last: Magic is the commit marker, so a
+	 * header cut short by power loss keeps an erased Magic and stays an
+	 * uninitialized sector
+	 */
+	hw->WriteBuffer(hw->Param,(Sector*hw->SectorSize) + offsetof(NorDB_Header_t,Vertion),
+			(uint8_t*)&Header + offsetof(NorDB_Header_t,Vertion),
+			offsetof(NorDB_Header_t,Records) - offsetof(NorDB_Header_t,Vertion));
+	hw->WriteBuffer(hw->Param,(Sector*hw->SectorSize),(uint8_t*)&Header,sizeof(Header.Magic));
 	debug_log("NorDB_Init_Sector done: sec=%d sync=%u\r\n", Sector, hw->SyncCounter);
 	return true;
 }

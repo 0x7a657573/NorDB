@@ -1,4 +1,5 @@
 #include "TestRoutines.h"
+#include <stddef.h>
 
 
 typedef struct  __attribute__((__packed__))
@@ -1019,6 +1020,85 @@ bool FifoOrder_Wrap_Test(NorDB_t *DB, char *name, int count)
 	/* leave the DB empty for the following tests */
 	NorDB_Clear(DB);
 	return true;
+}
+
+bool PowerLoss_SectorHeader_Test(NorDB_t *DB, char *name, int count)
+{
+	(void)count;
+	strcpy(name, "PowerLoss Header");
+
+	printf("--->NorDB Power Loss Sector Header Test\n");
+
+	NorDB_HWLayer *hw = DB->DB_ll;
+	uint32_t per_sector = DB->Record_NumberInSector;
+	uint32_t w = 0, r = 0, got = 0, n = 0;
+
+	/* sector aligned start: the last written sector is full, everything is read */
+	FreeRecord_Prepare(DB);
+
+	/* one full sector of unread records, the writer is about to open the next sector */
+	n = Fifo_Write(DB, &w, per_sector);
+	if (n != per_sector)
+	{
+		printf("\tError: wrote %u of %u records\n", n, per_sector);
+		return false;
+	}
+
+	/* interrupted NorDB_Init_Sector: sector erased, header body programmed, Magic not yet */
+	uint32_t next = (hw->LastWriteSector + 1) % hw->SectorNumber;
+	NorDB_Header_t body;
+	body.Vertion = NorDB_RVer;
+	body.SyncCounter = hw->SyncCounter + 1;
+	body.RecordSize = DB->Record_Size;
+	hw->SectorErace(hw->Param, next * hw->SectorSize);
+	hw->WriteBuffer(hw->Param, next * hw->SectorSize + offsetof(NorDB_Header_t, Vertion),
+			(uint8_t*)&body + offsetof(NorDB_Header_t, Vertion),
+			offsetof(NorDB_Header_t, Records) - offsetof(NorDB_Header_t, Vertion));
+
+	/* reboot */
+	hw->Synced = false;
+	NorDB_t *DB2 = NorDB(hw, GetDummyRecordSize());
+	if (DB2 == NULL)
+	{
+		printf("\tError: DB refused to open after interrupted header write\n");
+		return false;
+	}
+
+	bool ok = false;
+	if (NorDB_Get_TotalUnreadRecord(DB2) != per_sector)
+	{
+		printf("\tError: expected %u unread, got %u\n", per_sector, NorDB_Get_TotalUnreadRecord(DB2));
+		goto done;
+	}
+	if (!Fifo_Read(DB2, &r, UINT32_MAX, &got) || got != per_sector)
+	{
+		printf("\tError: read %u of %u records back\n", got, per_sector);
+		goto done;
+	}
+	printf("\tDB opens, records intact and in order\n");
+
+	/* keep writing across the half-initialized sector, two full laps */
+	for (int lap = 0; lap < 2; lap++)
+	{
+		n = Fifo_Write(DB2, &w, UINT32_MAX);
+		if (n < per_sector || !Fifo_Read(DB2, &r, UINT32_MAX, &got) || got != n)
+		{
+			printf("\tError: lap %d failed (written %u read %u)\n", lap, n, got);
+			goto done;
+		}
+	}
+	if (r != w)
+	{
+		printf("\tError: wrote %u records but read %u\n", w, r);
+		goto done;
+	}
+	printf("\tWriting continues across the interrupted sector in order\n\n");
+	ok = true;
+
+done:
+	NorDB_Destroy(DB2);
+	NorDB_Clear(DB);
+	return ok;
 }
 
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)

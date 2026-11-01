@@ -59,6 +59,7 @@ int main(int argc, char **argv)
 	RunTest(FreeRecord_Accuracy_Test, DB, 0);
 	RunTest(IncompatibleHeader_Test, DB, 0);
 	RunTest(FifoOrder_Wrap_Test, DB, 0);
+	RunTest(PowerLoss_SectorHeader_Test, DB, 0);
 	RunTest(DeleteDB_Test, DB, 10);
 	RunTest(Clear_Test, DB, 100);
 	RunTest(ReadEmpty_Test, DB, 0);
