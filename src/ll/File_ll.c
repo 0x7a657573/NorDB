@@ -29,7 +29,7 @@ void Filell_Erase(void *Param)
 	nordb_fflush(ptr->fileid);
 }
 
-void Filell_SectorErace(void*Param,uint32_t address)
+bool Filell_SectorErace(void*Param,uint32_t address)
 {
 	Filell_t *ptr = Param;
 
@@ -38,38 +38,45 @@ void Filell_SectorErace(void*Param,uint32_t address)
     {
         /*remove offset of sector :{*/
         if(nordb_fseek(ptr->fileid, Sector_Number*ptr->Sector_Size, SEEK_SET)!=0)
-            return;
+            return false;
         
         char tmp = 0xFF;
         for(int i=0;i<ptr->Sector_Size;i++)
-            nordb_fwrite(ptr->fileid,&tmp,1);
-		nordb_fflush(ptr->fileid);
+        {
+            if(nordb_fwrite(ptr->fileid,&tmp,1)!=1)
+                return false;
+        }
+		return nordb_fflush(ptr->fileid)==0;
     }
+	return false;
 }
 
-void Filell_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
+bool Filell_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
 	Filell_t *ptr = Param;
 
 	if((address <= ptr->Total_Size) && (len <= ptr->Total_Size - address))
 	{
         if(nordb_fseek(ptr->fileid, address, SEEK_SET)!=0)
-                return;
-        nordb_fwrite(ptr->fileid,data,len);
-		nordb_fflush(ptr->fileid);
+                return false;
+        if(nordb_fwrite(ptr->fileid,data,len)!=1)
+                return false;
+        return nordb_fflush(ptr->fileid)==0;
 	}
+	return false;
 }
 
-void Filell_ReadBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
+bool Filell_ReadBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
 	Filell_t *ptr = Param;
 
 	if((address <= ptr->Total_Size) && (len <= ptr->Total_Size - address))
 	{
         if(nordb_fseek(ptr->fileid, address, SEEK_SET)!=0)
-            return;
-        nordb_fread(ptr->fileid,data,len);
+            return false;
+        return nordb_fread(ptr->fileid,data,len)==1;
 	}
+	return false;
 }
 
 uint8_t Filell_flashCheck(void*Param)

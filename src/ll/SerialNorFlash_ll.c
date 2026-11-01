@@ -128,10 +128,13 @@ void FLASH_WaitForWriteEnd(void *Param)
 	} while ((StatusRegister1 & 0x01) == 0x01);
 }
 
-void FLASH_EraseSector(void *Param,uint32_t SectorAddr)
+bool FLASH_EraseSector(void *Param,uint32_t SectorAddr)
 {
 	FlashDev_t *FL =(FlashDev_t*) Param; 
 	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+	/*never touch a neighbouring partition*/
+	if(SectorAddr > FL->Total_Size || FL->SectorSize > FL->Total_Size - SectorAddr)
+		return false;
 	NorDB_sem_Lock(&spi->xSemaphore);
 	/*add Sector Offset*/
 	SectorAddr += FL->StartOffset;
@@ -161,12 +164,16 @@ void FLASH_EraseSector(void *Param,uint32_t SectorAddr)
 
 	debug_info("w25qxx EraseSector done.\r\n");
 	NorDB_sem_Unlock(&spi->xSemaphore);
+	return true;
 }
 
-void FLASH_ReadBuffer(void*Param, uint32_t ReadAddr, uint8_t *pBuffer,  uint16_t NumByteToRead)
+bool FLASH_ReadBuffer(void*Param, uint32_t ReadAddr, uint8_t *pBuffer,  uint16_t NumByteToRead)
 {
 	FlashDev_t *FL =(FlashDev_t*) Param; 
 	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+	/*never touch a neighbouring partition*/
+	if(ReadAddr > FL->Total_Size || NumByteToRead > FL->Total_Size - ReadAddr)
+		return false;
 	NorDB_sem_Lock(&spi->xSemaphore);
 	/*add Sector Offset*/
 	ReadAddr += FL->StartOffset;
@@ -190,6 +197,7 @@ void FLASH_ReadBuffer(void*Param, uint32_t ReadAddr, uint8_t *pBuffer,  uint16_t
 	cmd[Index++] = (0);
 	spi->SPI_WriteRead(spi->param,cmd,Index,pBuffer,NumByteToRead);
 	NorDB_sem_Unlock(&spi->xSemaphore);
+	return true;
 }
 
 static inline void FLASH_WritePage(void*Param,uint32_t address,uint8_t *data,uint16_t len)
@@ -228,10 +236,13 @@ static inline void FLASH_WritePage(void*Param,uint32_t address,uint8_t *data,uin
 	FLASH_WaitForWriteEnd(Param);
 }
 
-void FLASH_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
+bool FLASH_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
 	FlashDev_t *FL =(FlashDev_t*) Param; 
 	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
+	/*never touch a neighbouring partition*/
+	if(address > FL->Total_Size || len > FL->Total_Size - address)
+		return false;
 	uint32_t page_size = spi->DevOnBus->PageSize;
 
 	NorDB_sem_Lock(&spi->xSemaphore);	
@@ -270,6 +281,7 @@ void FLASH_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 
 	debug_info("w25qxx Write done.\r\n");
 	NorDB_sem_Unlock(&spi->xSemaphore);
+	return true;
 }
 
 uint8_t FLASH_flashCheck(void*Param)

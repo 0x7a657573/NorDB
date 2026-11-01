@@ -19,6 +19,7 @@ typedef struct
 	/*statistics var*/
 	uint32_t TotalUnreadRecord;
 	uint32_t CrcErrorCount;
+	uint32_t IoErrorCount;
 
 	/*Read/Write Sync*/
 	bool	 Synced;
@@ -28,9 +29,10 @@ typedef struct
 	uint16_t RecordSize;	/*record size (incl. crc) of the synced storage*/
 
 	void 	*Param;
-	void 	(*SectorErace)(void*Param,uint32_t address);
-	void 	(*WriteBuffer)(void*Param,uint32_t address,uint8_t *data,uint16_t len);
-	void    (*ReadBuffer)(void*Param,uint32_t address,uint8_t *data,uint16_t len);
+	/*io callbacks return true on success*/
+	bool 	(*SectorErace)(void*Param,uint32_t address);
+	bool 	(*WriteBuffer)(void*Param,uint32_t address,uint8_t *data,uint16_t len);
+	bool    (*ReadBuffer)(void*Param,uint32_t address,uint8_t *data,uint16_t len);
 	uint8_t (*DriverCheck)(void*Param);
 	const char *(*DriverName)(void*Param);
 }NorDB_HWLayer;
@@ -66,6 +68,7 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData);
 uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData);
 uint32_t NorDB_Get_TotalUnreadRecord(NorDB_t *db);
 uint32_t NorDB_Get_CrcErrorCount(NorDB_t *db);
+uint32_t NorDB_Get_IoErrorCount(NorDB_t *db);
 uint32_t NorDB_Get_FreeRecord(NorDB_t *db);
 void	 NorDB_Destroy(NorDB_t *db);
 

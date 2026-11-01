@@ -1120,6 +1120,367 @@ bool InitParams_Test(NorDB_t *DB, char *name, int count)
 	return true;
 }
 
+/* ---- IoFault_Test: inject a failing hw call at every interesting point ---- */
+#define IOFAULT_MAX_OPS 4096
+
+static NorDB_HWLayer *Io_hw;
+static bool (*Io_orig_read)(void*, uint32_t, uint8_t*, uint16_t);
+static bool (*Io_orig_write)(void*, uint32_t, uint8_t*, uint16_t);
+static bool (*Io_orig_erase)(void*, uint32_t);
+static uint32_t Io_calls;
+static uint32_t Io_fail_at;		/* 0: count calls only */
+static bool Io_fired;
+
+static bool Io_Hit(void)
+{
+	Io_calls++;
+	if (Io_fail_at != 0 && Io_calls == Io_fail_at)
+	{
+		Io_fired = true;
+		return true;
+	}
+	return false;
+}
+
+static bool Io_Read(void *p, uint32_t a, uint8_t *d, uint16_t l)
+{
+	return Io_Hit() ? false : Io_orig_read(p, a, d, l);
+}
+
+static bool Io_Write(void *p, uint32_t a, uint8_t *d, uint16_t l)
+{
+	return Io_Hit() ? false : Io_orig_write(p, a, d, l);
+}
+
+static bool Io_Erase(void *p, uint32_t a)
+{
+	return Io_Hit() ? false : Io_orig_erase(p, a);
+}
+
+static void Io_Install(NorDB_HWLayer *hw, uint32_t fail_at)
+{
+	Io_hw = hw;
+	Io_orig_read = hw->ReadBuffer;
+	Io_orig_write = hw->WriteBuffer;
+	Io_orig_erase = hw->SectorErace;
+	hw->ReadBuffer = Io_Read;
+	hw->WriteBuffer = Io_Write;
+	hw->SectorErace = Io_Erase;
+	Io_calls = 0;
+	Io_fail_at = fail_at;
+	Io_fired = false;
+}
+
+static void Io_Remove(void)
+{
+	Io_hw->ReadBuffer = Io_orig_read;
+	Io_hw->WriteBuffer = Io_orig_write;
+	Io_hw->SectorErace = Io_orig_erase;
+}
+
+typedef struct
+{
+	uint32_t n;
+	uint32_t start[IOFAULT_MAX_OPS];	/* hw call counter before the op */
+	uint32_t end[IOFAULT_MAX_OPS];		/* ... and after it */
+	bool	 hot[IOFAULT_MAX_OPS];		/* op worth injecting faults into */
+} IoRec_t;
+
+static IoRec_t Io_rec;
+
+typedef struct
+{
+	uint32_t w;		/* next sequence to write == records accepted */
+	uint32_t r;		/* next sequence expected from a read */
+	bool	 seen;	/* the injected fault was already handled */
+} IoFault_t;
+
+static void IoRec_Note(IoRec_t *rec, uint32_t start, uint32_t end, bool hot)
+{
+	if (rec == NULL || rec->n >= IOFAULT_MAX_OPS)
+		return;
+	rec->start[rec->n] = start;
+	rec->end[rec->n] = end;
+	rec->hot[rec->n] = hot || rec->n < 3;
+	rec->n++;
+}
+
+static bool IoFault_Add(NorDB_t *DB, IoFault_t *st, IoRec_t *rec, uint32_t n)
+{
+	NorDB_HWLayer *hw = DB->DB_ll;
+	dummy_t r;
+
+	for (uint32_t done = 0; done < n; )
+	{
+		Fifo_MakeRecord(&r, st->w);
+		uint32_t c0 = Io_calls;
+		uint32_t sc = hw->SyncCounter;
+		uint32_t adr = NorDB_AddRecord(DB, &r);
+		IoRec_Note(rec, c0, Io_calls, adr == 0 || sc != hw->SyncCounter);
+		if (adr == 0)
+		{
+			if (Io_fired && !st->seen)
+			{
+				st->seen = true;	/* injected fault: retry once it is gone */
+				continue;
+			}
+			return true;			/* DB full */
+		}
+		st->w++;
+		done++;
+	}
+	return true;
+}
+
+static bool IoFault_Read(NorDB_t *DB, IoFault_t *st, IoRec_t *rec, uint32_t n)
+{
+	NorDB_HWLayer *hw = DB->DB_ll;
+	dummy_t r;
+
+	for (uint32_t done = 0; done < n; )
+	{
+		uint32_t c0 = Io_calls;
+		uint16_t lr = hw->LastReadSector;
+		uint32_t adr = NorDB_ReadRecord(DB, &r);
+		IoRec_Note(rec, c0, Io_calls, adr == 0 || lr != hw->LastReadSector);
+		if (adr == 0)
+		{
+			if (st->r == st->w)
+				return true;		/* empty */
+			if (Io_fired && !st->seen)
+			{
+				st->seen = true;	/* injected fault: the record must still be there */
+				continue;
+			}
+			printf("\tError: ReadRecord returned 0 with %u records pending\n", st->w - st->r);
+			return false;
+		}
+		uint32_t seq = r.dummy[0] | (r.dummy[1] << 8) | (r.dummy[2] << 16) | ((uint32_t)r.dummy[3] << 24);
+		if (check_dummyRecord(&r) == false || seq != st->r)
+		{
+			printf("\tError: read sequence %u, expected %u\n", seq, st->r);
+			return false;
+		}
+		st->r++;
+		done++;
+	}
+	return true;
+}
+
+/* aligned start, then a wrap: formats the sector after the writer and the one it came from */
+static bool IoFault_Script(NorDB_t *DB, IoFault_t *st, IoRec_t *rec)
+{
+	uint32_t per = DB->Record_NumberInSector;
+	uint32_t sectors = DB->DB_ll->SectorNumber;
+
+	return IoFault_Add(DB, st, rec, 3) &&
+		   IoFault_Read(DB, st, rec, 2) &&
+		   IoFault_Add(DB, st, rec, per * (sectors - 1)) &&
+		   IoFault_Read(DB, st, rec, per) &&
+		   IoFault_Add(DB, st, rec, per) &&
+		   IoFault_Read(DB, st, rec, UINT32_MAX);
+}
+
+static bool IoFault_Run(NorDB_t *DB, uint32_t fail_at)
+{
+	NorDB_HWLayer *hw = DB->DB_ll;
+	IoFault_t st = {0, 0, false};
+	uint32_t got = 0;
+	bool ok = false;
+
+	FreeRecord_Prepare(DB);
+	uint32_t io_before = NorDB_Get_IoErrorCount(DB);
+
+	/* the script drains everything it wrote, so stop it half way to keep records pending */
+	Io_Install(hw, fail_at);
+	uint32_t per = DB->Record_NumberInSector;
+	uint32_t sectors = hw->SectorNumber;
+	bool run = IoFault_Add(DB, &st, NULL, 3) &&
+			   IoFault_Read(DB, &st, NULL, 2) &&
+			   IoFault_Add(DB, &st, NULL, per * (sectors - 1)) &&
+			   IoFault_Read(DB, &st, NULL, per) &&
+			   IoFault_Add(DB, &st, NULL, per);
+	bool fired = Io_fired;
+	Io_Remove();
+	if (!run)
+	{
+		printf("\tError: script failed with fault at call %u\n", fail_at);
+		return false;
+	}
+	if (NorDB_Get_IoErrorCount(DB) != io_before + (fired ? 1 : 0))
+	{
+		printf("\tError: IoErrorCount %u, expected %u (fault at call %u)\n",
+				NorDB_Get_IoErrorCount(DB), io_before + (fired ? 1 : 0), fail_at);
+		return false;
+	}
+	if (NorDB_Get_TotalUnreadRecord(DB) != st.w - st.r)
+	{
+		printf("\tError: unread %u, expected %u (fault at call %u)\n",
+				NorDB_Get_TotalUnreadRecord(DB), st.w - st.r, fail_at);
+		return false;
+	}
+
+	/* reboot: everything accepted and not delivered must still be there, in order */
+	hw->Synced = false;
+	NorDB_t *DB2 = NorDB(hw, GetDummyRecordSize());
+	if (DB2 == NULL)
+	{
+		printf("\tError: reopen failed (fault at call %u)\n", fail_at);
+		return false;
+	}
+	if (NorDB_Get_TotalUnreadRecord(DB2) != st.w - st.r ||
+		!Fifo_Read(DB2, &st.r, UINT32_MAX, &got) || st.r != st.w)
+	{
+		printf("\tError: records lost or reordered after reopen (fault at call %u)\n", fail_at);
+		goto done;
+	}
+	ok = true;
+
+done:
+	NorDB_Destroy(DB2);
+	NorDB_Clear(DB);
+	return ok;
+}
+
+/* fail every hw call of an operation in turn; the op must report it, state must stay usable */
+static bool IoFault_ClearOpenFormat(NorDB_t *DB)
+{
+	NorDB_HWLayer *hw = DB->DB_ll;
+	uint16_t size = GetDummyRecordSize();
+
+	for (uint32_t n = 1; ; n++)
+	{
+		IoFault_t st = {0, 0, false};
+		FreeRecord_Prepare(DB);
+		IoFault_Add(DB, &st, NULL, 4);
+		uint32_t io_before = NorDB_Get_IoErrorCount(DB);
+		Io_Install(hw, n);
+		bool res = NorDB_Clear(DB);
+		bool fired = Io_fired;
+		Io_Remove();
+		if (fired == res || NorDB_Get_IoErrorCount(DB) != io_before + (fired ? 1 : 0))
+		{
+			printf("\tError: Clear with fault at call %u: result %d fired %d\n", n, res, fired);
+			return false;
+		}
+		if (!NorDB_Clear(DB) || NorDB_Get_TotalUnreadRecord(DB) != 0)
+		{
+			printf("\tError: Clear does not recover after fault at call %u\n", n);
+			return false;
+		}
+		if (!fired)
+			break;
+	}
+	printf("\tClear reports every io error and recovers\n");
+
+	IoFault_t st = {0, 0, false};
+	FreeRecord_Prepare(DB);
+	IoFault_Add(DB, &st, NULL, 4);
+	for (uint32_t n = 1; ; n++)
+	{
+		uint32_t io_before = NorDB_Get_IoErrorCount(DB);
+		hw->Synced = false;
+		Io_Install(hw, n);
+		NorDB_t *DB2 = NorDB(hw, size);
+		bool fired = Io_fired;
+		Io_Remove();
+		if ((!fired && DB2 == NULL) || NorDB_Get_IoErrorCount(DB) != io_before + (fired ? 1 : 0))
+		{
+			printf("\tError: NorDB() with fault at call %u: handle %p fired %d\n", n, (void*)DB2, fired);
+			return false;
+		}
+		NorDB_Destroy(DB2);
+		hw->Synced = false;
+		DB2 = NorDB(hw, size);
+		if (DB2 == NULL || NorDB_Get_TotalUnreadRecord(DB2) != 4)
+		{
+			printf("\tError: NorDB() does not recover after fault at call %u\n", n);
+			NorDB_Destroy(DB2);
+			return false;
+		}
+		NorDB_Destroy(DB2);
+		if (!fired)
+			break;
+	}
+	printf("\tNorDB() fails cleanly on io errors and recovers\n");
+
+	for (uint32_t n = 1; ; n++)
+	{
+		Io_Install(hw, n);
+		bool res = NorDB_Format(hw);
+		bool fired = Io_fired;
+		Io_Remove();
+		if (fired == res)
+		{
+			printf("\tError: Format with fault at call %u: result %d fired %d\n", n, res, fired);
+			return false;
+		}
+		if (!fired)
+			break;
+		if (!NorDB_Format(hw))
+		{
+			printf("\tError: Format does not recover after fault at call %u\n", n);
+			return false;
+		}
+	}
+	NorDB_t *DB3 = NorDB(hw, size);
+	if (DB3 == NULL || NorDB_Get_TotalUnreadRecord(DB3) != 0)
+	{
+		printf("\tError: DB not empty after Format\n");
+		NorDB_Destroy(DB3);
+		return false;
+	}
+	NorDB_Destroy(DB3);
+	printf("\tFormat reports every io error and recovers\n");
+	return true;
+}
+
+bool IoFault_Test(NorDB_t *DB, char *name, int count)
+{
+	(void)count;
+	strcpy(name, "IO Fault");
+
+	printf("--->NorDB IO Fault Test\n");
+
+	NorDB_HWLayer *hw = DB->DB_ll;
+	IoFault_t st = {0, 0, false};
+
+	/* dry run: count the hw calls of every op, pick the ones around sector changes */
+	Io_rec.n = 0;
+	FreeRecord_Prepare(DB);
+	Io_Install(hw, 0);
+	bool ok = IoFault_Script(DB, &st, &Io_rec);
+	Io_Remove();
+	if (!ok || st.r != st.w || Io_rec.n == 0)
+	{
+		printf("\tError: dry run failed\n");
+		NorDB_Clear(DB);
+		return false;
+	}
+	Io_rec.hot[Io_rec.n - 1] = true;
+
+	uint32_t runs = 0;
+	for (uint32_t i = 0; i < Io_rec.n; i++)
+	{
+		if (!Io_rec.hot[i])
+			continue;
+		for (uint32_t at = Io_rec.start[i] + 1; at <= Io_rec.end[i]; at++)
+		{
+			if (!IoFault_Run(DB, at))
+				return false;
+			runs++;
+		}
+	}
+	printf("\t%u injected faults: nothing lost, reordered or delivered twice\n", runs);
+
+	if (!IoFault_ClearOpenFormat(DB))
+		return false;
+
+	NorDB_Clear(DB);
+	printf("\n");
+	return true;
+}
+
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)
 {
     char testName[20] = {0};

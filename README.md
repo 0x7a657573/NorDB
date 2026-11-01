@@ -8,6 +8,7 @@ NorDB is a lightweight, sector-based FIFO (First-In-First-Out) queue database sp
 
 * This library is optimized for append-only FIFO workloads. It is not intended for random updates.
 * The backend must provide at least 2 sectors (`NorDB()` returns `NULL` otherwise): a sector can only be erased and reused by moving to another one.
+* Breaking change: `SectorErace`, `WriteBuffer` and `ReadBuffer` of `NorDB_HWLayer` now return `bool` (`true` = success); out-of-tree backends must be updated. The on-flash format is unchanged.
 * `NorDB()` refuses storage written with another record size or format version instead of erasing it; call `NorDB_Format()` to start over.
 * Each stored record is `RecordSize + 1` bytes on storage (one CRC8 byte is appended internally).
 * The sector header is identified by `NorDB_Magic = 0x0766` and `NorDB_RVer = 0x0002`.
@@ -209,6 +210,9 @@ The public API is defined in `src/include/NorDB.h`.
 *   **`uint32_t NorDB_Get_CrcErrorCount(NorDB_t *db)`:** Gets the number of corrupt records skipped by `NorDB_ReadRecord`.
     *   `db`: A pointer to the database instance.
     *   Returns the CRC error count since the hardware layer was created.
+*   **`uint32_t NorDB_Get_IoErrorCount(NorDB_t *db)`:** Gets the number of failed hardware IO calls (see the IO error policy under Backends).
+    *   `db`: A pointer to the database instance.
+    *   Returns the IO error count since the hardware layer was created.
 *   **`uint32_t NorDB_Get_FreeRecord(NorDB_t *db)`:** Gets the number of records `NorDB_AddRecord` can still write.
     *   `db`: A pointer to the database instance.
     *   Records that were read but whose sector is not yet fully consumed are not counted, because the sector cannot be erased yet.
@@ -247,9 +251,9 @@ To use the file backend, you need to call the `Filell_Init` function, specifying
 
 To implement a custom backend, you need to create a `NorDB_HWLayer` struct and set the function pointers for the following functions:
 
-*   **`SectorErace`:** Erases a sector.
-*   **`WriteBuffer`:** Writes a buffer of data to the storage medium.
-*   **`ReadBuffer`:** Reads a buffer of data from the storage medium.
+*   **`SectorErace`:** Erases a sector. Returns `true` on success.
+*   **`WriteBuffer`:** Writes a buffer of data to the storage medium. Returns `true` on success.
+*   **`ReadBuffer`:** Reads a buffer of data from the storage medium. Returns `true` on success.
 *   **`DriverCheck`:** Checks if the driver is initialized and ready.
 *   **`DriverName`:** Returns the name of the driver.
 
@@ -258,16 +262,19 @@ Here is a skeleton for a custom backend:
 ```c
 #include "NorDB.h"
 
-void MyBackend_SectorErace(void *Param, uint32_t address) {
+bool MyBackend_SectorErace(void *Param, uint32_t address) {
     // Erase a sector on your custom hardware
+    return true; // false if the erase failed
 }
 
-void MyBackend_WriteBuffer(void *Param, uint32_t address, uint8_t *data, uint16_t len) {
+bool MyBackend_WriteBuffer(void *Param, uint32_t address, uint8_t *data, uint16_t len) {
     // Write data to your custom hardware
+    return true; // false if the write failed
 }
 
-void MyBackend_ReadBuffer(void *Param, uint32_t address, uint8_t *data, uint16_t len) {
+bool MyBackend_ReadBuffer(void *Param, uint32_t address, uint8_t *data, uint16_t len) {
     // Read data from your custom hardware
+    return true; // false if the read failed
 }
 
 uint8_t MyBackend_DriverCheck(void *Param) {
@@ -284,6 +291,7 @@ NorDB_HWLayer *MyBackend_Init() {
     if (!hw) {
         return NULL;
     }
+    memset(hw, 0, sizeof(NorDB_HWLayer));
 
     // Initialize your custom hardware
     // ...
@@ -300,6 +308,14 @@ NorDB_HWLayer *MyBackend_Init() {
     return hw;
 }
 ```
+
+**IO error policy.** The three IO callbacks must return `false` when the operation failed, for example a bus error or an out-of-range access. A failure is counted in `NorDB_Get_IoErrorCount()` and aborts the current operation without any destructive follow-up:
+
+*   A failed header read never leads to a sector being erased or formatted; `NorDB_AddRecord` stops searching and returns `0`.
+*   `NorDB_AddRecord` returns `0` and does not count the record if marking the slot, writing the payload or the read-back fails. A slot that was already marked is marked read again on a best-effort basis.
+*   `NorDB_ReadRecord` returns `0` and leaves the record unread, so it is delivered again by the next call (at-least-once). This includes a failure to mark the record read after it was read correctly.
+*   `NorDB()` fails (returns `NULL`) if the storage can not be scanned, and keeps the previous runtime state.
+*   `NorDB_Clear()` and `NorDB_Format()` stop at the first error and return `false`.
 
 
 ## Wear-leveling internals

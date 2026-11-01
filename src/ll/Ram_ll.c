@@ -7,17 +7,21 @@
 
 #include "ll/Ram_ll.h"
 
-void RAMll_SectorErace(void*Param,uint32_t address)
+bool RAMll_SectorErace(void*Param,uint32_t address)
 {
 	Ramll_t *ptr = Param;
 
 	uint16_t Sector_Number  = address / ptr->Sector_Size;
 	if(Sector_Number < ptr->Total_Sector)
+	{
 		nordb_memset(ptr->Buffer+(Sector_Number*ptr->Sector_Size),0xFF,ptr->Sector_Size);
+		return true;
+	}
+	return false;
 }
 
 
-void RAMll_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
+bool RAMll_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
 	Ramll_t *ptr = Param;
 
@@ -25,10 +29,12 @@ void RAMll_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 	{
 		nordb_memcpy(&ptr->Buffer[address],data,len);
 		//printf("wRAM (%d)->%d\n",address,len);
+		return true;
 	}
+	return false;
 }
 
-void RAMll_ReadBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
+bool RAMll_ReadBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 {
 	Ramll_t *ptr = Param;
 
@@ -36,7 +42,9 @@ void RAMll_ReadBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 	{
 		nordb_memcpy(data,&ptr->Buffer[address],len);
 		//printf("rRAM (%d)->%d\n",address,len);
+		return true;
 	}
+	return false;
 }
 
 uint8_t RAMll_flashCheck(void*Param)
