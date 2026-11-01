@@ -667,6 +667,61 @@ uint32_t NorDB_Get_CrcErrorCount(NorDB_t *db)
 	return count;
 }
 
+/*
+ * Read-only mirror of NorDB_GetWriteable_Record: counts the records AddRecord
+ * can still write. Costs up to SectorNumber sector header reads.
+ */
+static uint32_t NorDB_Count_Writable_Record(NorDB_t *db)
+{
+	NorDB_HWLayer *hw = db->DB_ll;
+	NorDB_Header_t *Header = (NorDB_Header_t*) db->Header_Cache;
+	uint32_t Total = 0;
+	uint32_t SearchSector = hw->LastWriteSector;
+	bool LastWriteReusable = false;
+	uint32_t i;
+
+	for(i=0;i<hw->SectorNumber;i++)
+	{
+		hw->ReadBuffer(hw->Param,(SearchSector*hw->SectorSize),(uint8_t*)Header,db->Header_Size);
+		if(!Is_TrueHeader(db,Header))
+		{
+			/*writer formats it*/
+			Total += db->Record_NumberInSector;
+		}
+		else
+		{
+			uint32_t Free = 0;
+			bool AllRead = true;
+			for(int j=0;j<db->Record_NumberInSector;j++)
+			{
+				uint8_t Record_status = nordb_GetBitStatus(Header->Records,j);
+				if(Record_status == nordb_FreeMark)
+					Free++;
+				else if(Record_status != nordb_ReadMark)
+					AllRead = false;
+			}
+
+			if(Free)
+				Total += Free;
+			else if(i==0)	/*writer can not format LastWriteSector*/
+				LastWriteReusable = AllRead;
+			else
+			{
+				if(!AllRead)
+					break;	/*unread data, writer can not go further*/
+				Total += db->Record_NumberInSector;
+			}
+		}
+		SearchSector = (SearchSector+1) >= hw->SectorNumber ? 0:(SearchSector+1);
+	}
+
+	/*after the writer moved away, the old LastWriteSector can be formatted too*/
+	if(i==hw->SectorNumber && LastWriteReusable)
+		Total += db->Record_NumberInSector;
+
+	return Total;
+}
+
 uint32_t NorDB_Get_FreeRecord(NorDB_t *db)
 {
 	if(db==NULL)	return 0;
@@ -676,11 +731,10 @@ uint32_t NorDB_Get_FreeRecord(NorDB_t *db)
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
 
-	uint32_t TotalRecord = hw->SectorNumber * db->Record_NumberInSector;
-	uint32_t unread = hw->TotalUnreadRecord;
+	uint32_t Free = NorDB_Count_Writable_Record(db);
 
 	/*unlock io*/
 	NorDB_sem_Unlock(&hw->sema);
 
-	return TotalRecord - unread;
+	return Free;
 }

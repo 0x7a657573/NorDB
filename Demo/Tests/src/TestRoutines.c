@@ -683,6 +683,132 @@ done:
 }
 
 
+static uint32_t FreeRecord_FillUntilFail(NorDB_t *DB)
+{
+	dummy_t r;
+	uint32_t n = 0;
+	get_RandomRecord(&r);
+	while (NorDB_AddRecord(DB, &r) != 0)
+		n++;
+	return n;
+}
+
+static bool FreeRecord_Check(NorDB_t *DB, const char *pattern)
+{
+	uint32_t free_rec = NorDB_Get_FreeRecord(DB);
+	uint32_t added = FreeRecord_FillUntilFail(DB);
+	if (free_rec != added)
+	{
+		printf("\tError (%s): FreeRecord=%u but AddRecord accepted %u\n", pattern, free_rec, added);
+		return false;
+	}
+	printf("\t%s: FreeRecord=%u matches\n", pattern, free_rec);
+	return true;
+}
+
+static uint32_t FreeRecord_Add(NorDB_t *DB, uint32_t n)
+{
+	dummy_t r;
+	uint32_t done = 0;
+	get_RandomRecord(&r);
+	while (done < n && NorDB_AddRecord(DB, &r) != 0)
+		done++;
+	return done;
+}
+
+static void FreeRecord_Read(NorDB_t *DB, uint32_t n)
+{
+	dummy_t r;
+	for (uint32_t i = 0; i < n; i++)
+		NorDB_ReadRecord(DB, &r);
+}
+
+/* read up to and including the last slot of the sector the read head is in */
+static void FreeRecord_ReadSector(NorDB_t *DB)
+{
+	dummy_t r;
+	uint32_t adr;
+	while ((adr = NorDB_ReadRecord(DB, &r)) != 0)
+	{
+		uint32_t idx = ((adr % DB->DB_ll->SectorSize) - DB->Header_Size) / DB->Record_Size;
+		if (idx + 1 >= DB->Record_NumberInSector)
+			break;
+	}
+}
+
+/* empty DB whose last written sector is completely used, so patterns start sector aligned */
+static void FreeRecord_Prepare(NorDB_t *DB)
+{
+	dummy_t r;
+	uint32_t adr;
+	NorDB_Clear(DB);
+	get_RandomRecord(&r);
+	while ((adr = NorDB_AddRecord(DB, &r)) != 0)
+	{
+		uint32_t idx = ((adr % DB->DB_ll->SectorSize) - DB->Header_Size) / DB->Record_Size;
+		if (idx + 1 >= DB->Record_NumberInSector)
+			break;
+	}
+	NorDB_Clear(DB);
+}
+
+bool FreeRecord_Accuracy_Test(NorDB_t *DB, char *name, int count)
+{
+	(void)count;
+	strcpy(name, "FreeRecord Accuracy");
+
+	printf("--->NorDB FreeRecord Accuracy Test\n");
+
+	uint32_t per_sector = DB->Record_NumberInSector;
+	/* stay one sector short of wrapping onto the sector the read head still points to */
+	uint32_t fill = per_sector * (DB->DB_ll->SectorNumber - 1);
+	bool ok = true;
+
+	NorDB_Clear(DB);
+	ok = ok && FreeRecord_Check(DB, "empty");
+
+	FreeRecord_Prepare(DB);
+	ok = ok && FreeRecord_Check(DB, "empty, aligned");
+
+	FreeRecord_Prepare(DB);
+	FreeRecord_Add(DB, 3);
+	ok = ok && FreeRecord_Check(DB, "partial sector");
+
+	FreeRecord_Prepare(DB);
+	FreeRecord_Add(DB, UINT32_MAX);
+	ok = ok && FreeRecord_Check(DB, "full");
+
+	FreeRecord_Prepare(DB);
+	FreeRecord_Add(DB, UINT32_MAX);
+	FreeRecord_Read(DB, 7);
+	ok = ok && FreeRecord_Check(DB, "full, 7 read");
+
+	FreeRecord_Prepare(DB);
+	FreeRecord_Add(DB, fill);
+	FreeRecord_Read(DB, per_sector / 2);
+	ok = ok && FreeRecord_Check(DB, "half sector read");
+
+	FreeRecord_Prepare(DB);
+	FreeRecord_Add(DB, fill);
+	FreeRecord_ReadSector(DB);
+	ok = ok && FreeRecord_Check(DB, "one sector read");
+
+	FreeRecord_Prepare(DB);
+	FreeRecord_Add(DB, fill);
+	FreeRecord_ReadSector(DB);
+	FreeRecord_Read(DB, 3);
+	FreeRecord_Add(DB, 4);
+	ok = ok && FreeRecord_Check(DB, "wrap-around");
+
+	/* leave the DB empty for the following tests */
+	NorDB_Clear(DB);
+	if (!ok)
+		return false;
+
+	printf("\n");
+	return true;
+}
+
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)
 {
     char testName[20] = {0};

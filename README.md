@@ -204,9 +204,11 @@ The public API is defined in `src/include/NorDB.h`.
 *   **`uint32_t NorDB_Get_CrcErrorCount(NorDB_t *db)`:** Gets the number of corrupt records skipped by `NorDB_ReadRecord`.
     *   `db`: A pointer to the database instance.
     *   Returns the CRC error count since the hardware layer was created.
-*   **`uint32_t NorDB_Get_FreeRecord(NorDB_t *db)`:** Gets the number of free records in the database.
+*   **`uint32_t NorDB_Get_FreeRecord(NorDB_t *db)`:** Gets the number of records `NorDB_AddRecord` can still write.
     *   `db`: A pointer to the database instance.
-    *   Returns the number of free records.
+    *   Records that were read but whose sector is not yet fully consumed are not counted, because the sector cannot be erased yet.
+    *   Note: this scans the sector headers, so it costs up to `SectorNumber` header reads.
+    *   Returns the number of writable records.
 
 ## Backends
 
