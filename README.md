@@ -249,6 +249,8 @@ The file backend is implemented in `src/ll/File_ll.c`. It uses a file on the hos
 
 To use the file backend, you need to call the `Filell_Init` function, specifying the path to the file, the sector size, and the total number of sectors.
 
+Each write is flushed and synced to disk (define `NORDB_FILE_NO_FSYNC` to skip the sync on a port without it) before it returns, so the payload reaches the disk before the CRC byte. This costs time (about 4 ms per added record on an NVMe SSD with ext4), and durability still depends on the disk honoring fsync. The `File_ex` demo defines it because its tests do far too many writes.
+
 ### Implementing a Custom Backend
 
 To implement a custom backend, you need to create a `NorDB_HWLayer` struct and set the function pointers for the following functions:

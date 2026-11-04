@@ -17,6 +17,17 @@
  **********************************************************************/
 #include "ll/File_ll.h"
 
+/*make flushed data durable (returns 0 on success)*/
+#if defined(NORDB_FILE_NO_FSYNC)
+#define nordb_fsync(fd)                 0
+#elif defined(_WIN32)
+#include <io.h>
+#define nordb_fsync(fd)                 _commit(_fileno(fd))
+#else
+#include <unistd.h>
+#define nordb_fsync(fd)                 fsync(fileno(fd))
+#endif
+
 void Filell_Erase(void *Param)
 {
 	Filell_t *ptr = Param;
@@ -26,7 +37,8 @@ void Filell_Erase(void *Param)
     char tmp = 0xFF;
     for(int i=0;i<ptr->Total_Size;i++)
         nordb_fwrite(ptr->fileid,&tmp,1);
-	nordb_fflush(ptr->fileid);
+	if(nordb_fflush(ptr->fileid)==0)
+		(void)nordb_fsync(ptr->fileid);
 }
 
 bool Filell_SectorErace(void*Param,uint32_t address)
@@ -46,7 +58,7 @@ bool Filell_SectorErace(void*Param,uint32_t address)
             if(nordb_fwrite(ptr->fileid,&tmp,1)!=1)
                 return false;
         }
-		return nordb_fflush(ptr->fileid)==0;
+		return nordb_fflush(ptr->fileid)==0 && nordb_fsync(ptr->fileid)==0;
     }
 	return false;
 }
@@ -61,7 +73,7 @@ bool Filell_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
                 return false;
         if(nordb_fwrite(ptr->fileid,data,len)!=1)
                 return false;
-        return nordb_fflush(ptr->fileid)==0;
+        return nordb_fflush(ptr->fileid)==0 && nordb_fsync(ptr->fileid)==0;
 	}
 	return false;
 }
