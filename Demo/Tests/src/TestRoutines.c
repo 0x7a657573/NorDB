@@ -701,8 +701,10 @@ done:
 /* plain CRC8 of NorDB.c, not declared in NorDB.h */
 unsigned NorDB_crc8x_fast(void const *mem, size_t len);
 
-/* fresh storage, one valid record, then a slot in the same sector marked unread with
-   `partial` bytes of payload written (0 = erased slot); the crc byte stays erased */
+/* fresh storage; with two or more slots per sector one valid record, then the next slot of
+   that sector, else (single slot) slot 0 of sector 0 where the first write would go; the
+   phantom slot is marked unread with `partial` bytes of payload written (0 = erased slot)
+   and its crc byte stays erased */
 static bool ErasedCrc_Case(NorDB_HWLayer *hw, uint16_t size, const uint8_t *partial,
 						   uint16_t partial_len, const char *what)
 {
@@ -717,29 +719,39 @@ static bool ErasedCrc_Case(NorDB_HWLayer *hw, uint16_t size, const uint8_t *part
 		printf("\tError: NorDB(%u) failed\n", size);
 		return false;
 	}
-	if (DB->Record_NumberInSector < 2)
-	{
-		printf("\t%s: skipped, record size %u leaves no second slot in a sector\n", what, size);
-		ok = true;
-		goto done;
-	}
+	bool has_valid = DB->Record_NumberInSector >= 2;
+	uint32_t sector_adr = 0;
+	uint32_t idx = 0;
 	for (uint16_t i = 0; i < size; i++)
 		w[i] = (uint8_t)(rand() & 0xFF);
-	uint32_t adr = NorDB_AddRecord(DB, w);
-	if (adr == 0)
+	if (has_valid)
 	{
-		printf("\tError: failed to add record (size %u)\n", size);
-		goto done;
+		uint32_t adr = NorDB_AddRecord(DB, w);
+		if (adr == 0)
+		{
+			printf("\tError: failed to add record (size %u)\n", size);
+			goto done;
+		}
+		sector_adr = (adr / hw->SectorSize) * hw->SectorSize;
+		idx = ((adr % hw->SectorSize) - DB->Header_Size) / DB->Record_Size + 1;
+		if (idx >= DB->Record_NumberInSector)
+		{
+			printf("\tError: no free slot after the record (size %u)\n", size);
+			goto done;
+		}
 	}
-	uint32_t sector_adr = (adr / hw->SectorSize) * hw->SectorSize;
-	uint32_t idx = ((adr % hw->SectorSize) - DB->Header_Size) / DB->Record_Size;
-	if (idx + 1 >= DB->Record_NumberInSector)
+	else
 	{
-		printf("\tError: no free slot after the record (size %u)\n", size);
-		goto done;
+		/* no record to initialize sector 0, write its header as the first write would */
+		NorDB_Header_t hdr = { NorDB_Magic, NorDB_RVer, 1, DB->Record_Size };
+		if (!hw->WriteBuffer(hw->Param, 0, (uint8_t*)&hdr, sizeof(hdr)))
+		{
+			printf("\tError: failed to write sector header (size %u)\n", size);
+			goto done;
+		}
 	}
-	uint32_t slot_adr = sector_adr + DB->Header_Size + (idx + 1) * DB->Record_Size;
-	MarkSlotUnread(hw, sector_adr, idx + 1);
+	uint32_t slot_adr = sector_adr + DB->Header_Size + idx * DB->Record_Size;
+	MarkSlotUnread(hw, sector_adr, idx);
 	if (partial_len)
 		hw->WriteBuffer(hw->Param, slot_adr, (uint8_t*)partial, partial_len);
 
@@ -754,13 +766,13 @@ static bool ErasedCrc_Case(NorDB_HWLayer *hw, uint16_t size, const uint8_t *part
 		printf("\tError: failed to re-create DB (size %u)\n", size);
 		return false;
 	}
-	if (NorDB_Get_TotalUnreadRecord(DB) != 1 || NorDB_Get_CrcErrorCount(DB) != crc_before + 1)
+	if (NorDB_Get_TotalUnreadRecord(DB) != has_valid || NorDB_Get_CrcErrorCount(DB) != crc_before + 1)
 	{
-		printf("\tError: %s size %u: unread=%u (exp 1) crc_errors=%u (exp %u)\n", what, size,
-			   NorDB_Get_TotalUnreadRecord(DB), NorDB_Get_CrcErrorCount(DB), crc_before + 1);
+		printf("\tError: %s size %u: unread=%u (exp %u) crc_errors=%u (exp %u)\n", what, size,
+			   NorDB_Get_TotalUnreadRecord(DB), has_valid, NorDB_Get_CrcErrorCount(DB), crc_before + 1);
 		goto done;
 	}
-	if (NorDB_ReadRecord(DB, out) == 0 || memcmp(out, w, size) != 0)
+	if (has_valid && (NorDB_ReadRecord(DB, out) == 0 || memcmp(out, w, size) != 0))
 	{
 		printf("\tError: %s size %u: valid record lost\n", what, size);
 		goto done;
@@ -770,7 +782,16 @@ static bool ErasedCrc_Case(NorDB_HWLayer *hw, uint16_t size, const uint8_t *part
 		printf("\tError: %s size %u: fake record delivered\n", what, size);
 		goto done;
 	}
-	printf("\t%s dropped at sync (size %u)\n", what, size);
+	/* the repaired DB must keep working */
+	for (uint16_t i = 0; i < size; i++)
+		w[i] = (uint8_t)(rand() & 0xFF);
+	if (NorDB_AddRecord(DB, w) == 0 || NorDB_ReadRecord(DB, out) == 0 || memcmp(out, w, size) != 0)
+	{
+		printf("\tError: %s size %u: DB not usable after repair\n", what, size);
+		goto done;
+	}
+	printf("\t%s dropped at sync (size %u, %s), DB still usable\n", what, size,
+		   has_valid ? "valid record kept" : "single slot");
 	ok = true;
 
 done:
