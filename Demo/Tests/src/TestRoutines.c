@@ -587,6 +587,18 @@ bool CRC_DetectsCorruption_Test(NorDB_t *DB, char *name, int count)
 }
 
 
+/* power loss: mark slot idx of a sector unread without writing its payload */
+static void MarkSlotUnread(NorDB_HWLayer *hw, uint32_t sector_adr, uint32_t idx)
+{
+	uint32_t byte_adr = sector_adr + sizeof(NorDB_Header_t) + (idx / 4);
+	int bit_shift = (idx % 4) * 2;
+	uint8_t b = 0;
+	hw->ReadBuffer(hw->Param, byte_adr, &b, 1);
+	b &= ~(nordb_FreeMark << bit_shift);
+	b |= nordb_UnReadMark << bit_shift;
+	hw->WriteBuffer(hw->Param, byte_adr, &b, 1);
+}
+
 bool PowerLoss_PhantomRecord_Test(NorDB_t *DB, char *name, int count)
 {
 	(void)count;
@@ -630,13 +642,7 @@ bool PowerLoss_PhantomRecord_Test(NorDB_t *DB, char *name, int count)
 
 	/* power loss: next slot marked unread, payload never written */
 	idx++;
-	uint32_t byte_adr = (adr / hw->SectorSize) * hw->SectorSize + sizeof(NorDB_Header_t) + (idx / 4);
-	int bit_shift = (idx % 4) * 2;
-	uint8_t b = 0;
-	hw->ReadBuffer(hw->Param, byte_adr, &b, 1);
-	b &= ~(nordb_FreeMark << bit_shift);
-	b |= nordb_UnReadMark << bit_shift;
-	hw->WriteBuffer(hw->Param, byte_adr, &b, 1);
+	MarkSlotUnread(hw, (adr / hw->SectorSize) * hw->SectorSize, idx);
 
 	/* simulate reboot: a second NorDB_t on the same hw runs the sync */
 	uint32_t crc_before = NorDB_Get_CrcErrorCount(DB);
@@ -686,6 +692,164 @@ bool PowerLoss_PhantomRecord_Test(NorDB_t *DB, char *name, int count)
 
 done:
 	NorDB_Destroy(DB2);
+	return ok;
+}
+
+
+#define ERASED_CRC_MAX_PAYLOAD 254
+
+/* plain CRC8 of NorDB.c, not declared in NorDB.h */
+unsigned NorDB_crc8x_fast(void const *mem, size_t len);
+
+/* fresh storage, one valid record, then a slot in the same sector marked unread with
+   `partial` bytes of payload written (0 = erased slot); the crc byte stays erased */
+static bool ErasedCrc_Case(NorDB_HWLayer *hw, uint16_t size, const uint8_t *partial,
+						   uint16_t partial_len, const char *what)
+{
+	uint8_t w[ERASED_CRC_MAX_PAYLOAD], out[ERASED_CRC_MAX_PAYLOAD];
+	bool ok = false;
+
+	if (!NorDB_Format(hw))
+		return false;
+	NorDB_t *DB = NorDB(hw, size);
+	if (DB == NULL)
+	{
+		printf("\tError: NorDB(%u) failed\n", size);
+		return false;
+	}
+	if (DB->Record_NumberInSector < 2)
+	{
+		printf("\t%s: skipped, record size %u leaves no second slot in a sector\n", what, size);
+		ok = true;
+		goto done;
+	}
+	for (uint16_t i = 0; i < size; i++)
+		w[i] = (uint8_t)(rand() & 0xFF);
+	uint32_t adr = NorDB_AddRecord(DB, w);
+	if (adr == 0)
+	{
+		printf("\tError: failed to add record (size %u)\n", size);
+		goto done;
+	}
+	uint32_t sector_adr = (adr / hw->SectorSize) * hw->SectorSize;
+	uint32_t idx = ((adr % hw->SectorSize) - DB->Header_Size) / DB->Record_Size;
+	if (idx + 1 >= DB->Record_NumberInSector)
+	{
+		printf("\tError: no free slot after the record (size %u)\n", size);
+		goto done;
+	}
+	uint32_t slot_adr = sector_adr + DB->Header_Size + (idx + 1) * DB->Record_Size;
+	MarkSlotUnread(hw, sector_adr, idx + 1);
+	if (partial_len)
+		hw->WriteBuffer(hw->Param, slot_adr, (uint8_t*)partial, partial_len);
+
+	/* simulate reboot */
+	uint32_t crc_before = NorDB_Get_CrcErrorCount(DB);
+	NorDB_Destroy(DB);
+	DB = NULL;
+	hw->Synced = false;
+	DB = NorDB(hw, size);
+	if (DB == NULL)
+	{
+		printf("\tError: failed to re-create DB (size %u)\n", size);
+		return false;
+	}
+	if (NorDB_Get_TotalUnreadRecord(DB) != 1 || NorDB_Get_CrcErrorCount(DB) != crc_before + 1)
+	{
+		printf("\tError: %s size %u: unread=%u (exp 1) crc_errors=%u (exp %u)\n", what, size,
+			   NorDB_Get_TotalUnreadRecord(DB), NorDB_Get_CrcErrorCount(DB), crc_before + 1);
+		goto done;
+	}
+	if (NorDB_ReadRecord(DB, out) == 0 || memcmp(out, w, size) != 0)
+	{
+		printf("\tError: %s size %u: valid record lost\n", what, size);
+		goto done;
+	}
+	if (NorDB_ReadRecord(DB, out) != 0)
+	{
+		printf("\tError: %s size %u: fake record delivered\n", what, size);
+		goto done;
+	}
+	printf("\t%s dropped at sync (size %u)\n", what, size);
+	ok = true;
+
+done:
+	NorDB_Destroy(DB);
+	return ok;
+}
+
+bool ErasedCrc_Test(NorDB_t *DB, char *name, int count)
+{
+	(void)count;
+	uint8_t w[ERASED_CRC_MAX_PAYLOAD], out[ERASED_CRC_MAX_PAYLOAD];
+	NorDB_HWLayer *hw = DB->DB_ll;
+	bool ok = false;
+	strcpy(name, "Erased CRC");
+
+	printf("--->NorDB Erased CRC Test\n");
+
+	/* payload sizes where the crc8 of an all 0xFF payload is 0xFF */
+	for (uint16_t size = 127; size <= ERASED_CRC_MAX_PAYLOAD; size += 127)
+	{
+		if (size + 1u + sizeof(NorDB_Header_t) + 1u > hw->SectorSize)
+		{
+			printf("\tRecord size %u does not fit in a sector, skipped\n", size);
+			continue;
+		}
+		/* a partial payload whose crc is 0xFF, followed by an erased crc byte */
+		memset(w, 0xFF, size);
+		w[0] = 0;
+		int found = 0;
+		for (int b = 0; b < 256 && !found; b++)
+		{
+			w[1] = (uint8_t)b;
+			found = NorDB_crc8x_fast(w, size) == 0xFF;
+		}
+		if (!found)
+		{
+			printf("\tError: no partial payload with crc 0xFF (size %u)\n", size);
+			goto done;
+		}
+
+		/* (1) slot marked unread, still fully erased */
+		if (!ErasedCrc_Case(hw, size, NULL, 0, "Erased slot"))
+			goto done;
+		/* (3) partial payload, erased crc byte */
+		if (!ErasedCrc_Case(hw, size, w, size - 1, "Partial payload"))
+			goto done;
+
+		/* (2) a real all 0xFF record is a valid record */
+		if (!NorDB_Format(hw))
+			goto done;
+		NorDB_t *DB2 = NorDB(hw, size);
+		if (DB2 == NULL)
+		{
+			printf("\tError: NorDB(%u) failed\n", size);
+			goto done;
+		}
+		memset(w, 0xFF, size);
+		memset(out, 0, size);
+		bool rec_ok = NorDB_AddRecord(DB2, w) != 0 && NorDB_ReadRecord(DB2, out) != 0 &&
+					  memcmp(out, w, size) == 0 && NorDB_Get_TotalUnreadRecord(DB2) == 0;
+		NorDB_Destroy(DB2);
+		if (!rec_ok)
+		{
+			printf("\tError: all 0xFF record not delivered intact (size %u)\n", size);
+			goto done;
+		}
+		printf("\tAll 0xFF record delivered intact (size %u)\n", size);
+	}
+	printf("\n");
+	ok = true;
+
+done:
+	/* give the storage back to the record size of the other tests */
+	if (!NorDB_Format(hw))
+		return false;
+	NorDB_t *DB3 = NorDB(hw, GetDummyRecordSize());
+	if (DB3 == NULL)
+		return false;
+	NorDB_Destroy(DB3);
 	return ok;
 }
 

@@ -8,10 +8,10 @@ NorDB is a lightweight, sector-based FIFO (First-In-First-Out) queue database sp
 
 * This library is optimized for append-only FIFO workloads. It is not intended for random updates.
 * The backend must provide at least 2 sectors (`NorDB()` returns `NULL` otherwise): a sector can only be erased and reused by moving to another one.
-* Breaking change: `SectorErace`, `WriteBuffer` and `ReadBuffer` of `NorDB_HWLayer` now return `bool` (`true` = success); out-of-tree backends must be updated. The on-flash format is unchanged.
+* Breaking change: `SectorErace`, `WriteBuffer` and `ReadBuffer` of `NorDB_HWLayer` now return `bool` (`true` = success); out-of-tree backends must be updated. The stored record CRC is now never `0xFF` (see CRC8 Protection) and `NorDB_RVer` is bumped, so storage written by older versions is rejected by `NorDB()` until `NorDB_Format()`.
 * `NorDB()` refuses storage written with another record size or format version instead of erasing it; call `NorDB_Format()` to start over.
 * Each stored record is `RecordSize + 1` bytes on storage (one CRC8 byte is appended internally).
-* The sector header is identified by `NorDB_Magic = 0x0766` and `NorDB_RVer = 0x0002`.
+* The sector header is identified by `NorDB_Magic = 0x0766` and `NorDB_RVer = 0x0003`.
 * `NorDB_Clear()` performs a logical clear (marks unread records as read). Physical erase happens lazily when a fully-consumed sector is reused.
 * After restart/power-loss, `NorDB()` rebuilds runtime state (read/write sector pointers and unread count) by scanning sector headers and record mark bits.
 
@@ -409,6 +409,7 @@ T6    | Continue       | Writing...    | Sync=2 (Full) | Sync=3 (Full)
 - CRC-8 with polynomial 0x07 (table-driven)
 - Applied to every record (user data only, not including CRC byte itself)
 - Stored as last byte of each record
+- A computed CRC of `0xFF` is stored as `0xFE`, so an erased CRC byte can never validate
 
 **Write Path:**
 1. Calculate CRC8 of user data
@@ -494,7 +495,7 @@ Byte Offset | Content
 ------------|----------------------------------------------------------
 0x0000      | NorDB_Header_t (10 bytes base)
 0x0002      |   uint16_t Magic = 0x0766
-0x0004      |   uint16_t Vertion = 0x0002
+0x0004      |   uint16_t Vertion = 0x0003
 0x0006      |   uint32_t SyncCounter
 0x000A      |   uint16_t RecordSize
 0x000C      | Records[] bitmap (2 bits per record, variable length)

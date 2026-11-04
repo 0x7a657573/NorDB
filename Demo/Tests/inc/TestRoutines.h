@@ -23,6 +23,7 @@ bool Clear_Test(NorDB_t *DB, char *name, int count);
 bool ReadEmpty_Test(NorDB_t *DB, char *name, int count);
 bool CRC_DetectsCorruption_Test(NorDB_t *DB, char *name, int count);
 bool PowerLoss_PhantomRecord_Test(NorDB_t *DB, char *name, int count);
+bool ErasedCrc_Test(NorDB_t *DB, char *name, int count);
 bool FreeRecord_Accuracy_Test(NorDB_t *DB, char *name, int count);
 bool IncompatibleHeader_Test(NorDB_t *DB, char *name, int count);
 bool FifoOrder_Wrap_Test(NorDB_t *DB, char *name, int count);

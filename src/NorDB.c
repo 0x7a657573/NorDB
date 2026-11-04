@@ -334,6 +334,12 @@ static bool NorDB_GetWriteable_Record(NorDB_t *db, uint32_t *Adr)
 	return true;
 }
 
+/*checksum stored for a record: 0xFF is reserved, an erased checksum byte must never validate*/
+static uint8_t NorDB_Record_Crc(unsigned Crc)
+{
+	return (Crc == 0xFF) ? 0xFE : (uint8_t)Crc;
+}
+
 /*CRC of a stored record payload, read in small chunks (no record sized buffer)*/
 static bool NorDB_Calc_Stored_Crc(NorDB_t *db, uint32_t Adr, uint8_t *Crc)
 {
@@ -350,7 +356,7 @@ static bool NorDB_Calc_Stored_Crc(NorDB_t *db, uint32_t Adr, uint8_t *Crc)
 		Crc_Acc = NorDB_crc8x_update(Crc_Acc,Chunk,n);
 		Done += n;
 	}
-	*Crc = Crc_Acc;
+	*Crc = NorDB_Record_Crc(Crc_Acc);
 	return true;
 }
 
@@ -704,7 +710,7 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
 	}
 
 
-	uint8_t Record_Crc = NorDB_crc8x_fast(RecoedData,db->Record_Size-1);
+	uint8_t Record_Crc = NorDB_Record_Crc(NorDB_crc8x_fast(RecoedData,db->Record_Size-1));
 	uint8_t ReadBack_Crc = 0;
 	uint8_t Stored_Crc = 0;
 	/*payload first, crc last*/
@@ -793,7 +799,7 @@ uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData)
 		}
 		hw->TotalUnreadRecord--;
 
-		uint8_t Readback_Crc = NorDB_crc8x_fast(RecoedData,db->Record_Size-1);
+		uint8_t Readback_Crc = NorDB_Record_Crc(NorDB_crc8x_fast(RecoedData,db->Record_Size-1));
 
 		if(Record_Crc!=Readback_Crc)
 		{
