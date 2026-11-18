@@ -13,6 +13,7 @@
 
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count);
 int TestSummary(void);
+void RunFlashTests(NorDB_t *DB, int ambiguous_stride);
 
 int GetDummyRecordSize(void);
 bool FullFill_Test(NorDB_t *DB, char *name, int count);

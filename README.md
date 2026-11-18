@@ -536,6 +536,7 @@ The `Demo` directory contains several demo applications that can be used to test
 *   **`Ram_ex`:** Tests the RAM backend.
 *   **`Ram_mt_ex`:** RAM multi-thread demo (concurrent read/write using `pthread`).
 *   **`NorFlash_ex`:** Tests the NOR flash backend.
+*   **`FlashMock_ex`:** Tests the NOR flash backend with an emulated SPI NOR flash.
 
 To run the tests, you will need to build the demo applications as described in the "Getting Started" section.
 

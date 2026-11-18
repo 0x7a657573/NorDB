@@ -2003,3 +2003,25 @@ int TestSummary(void)
 		printf("Tests failed: %d of %d\n", tests_failed, tests_run);
 	return tests_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }
+
+void RunFlashTests(NorDB_t *DB, int ambiguous_stride)
+{
+	RunTest(FullFill_Test, DB, 1);
+	RunTest(RoundRobin_Test, DB, 1);
+	RunTest(OverWrite_Test, DB, 1);
+	RunTest(WriteRead_Time_Test, DB, 100);
+	RunTest(CRC_DetectsCorruption_Test, DB, 0);
+	RunTest(PowerLoss_PhantomRecord_Test, DB, 0);
+	RunTest(ErasedCrc_Test, DB, 0);
+	RunTest(FreeRecord_Accuracy_Test, DB, 0);
+	RunTest(IncompatibleHeader_Test, DB, 0);
+	RunTest(FifoOrder_Wrap_Test, DB, 0);
+	RunTest(PowerLoss_SectorHeader_Test, DB, 0);
+	RunTest(PowerLoss_Erase_Test, DB, 0);
+	RunTest(InitParams_Test, DB, 0);
+	RunTest(IoFault_Test, DB, 0);
+	RunTest(AmbiguousIoFault_Test, DB, ambiguous_stride);
+	RunTest(DeleteDB_Test, DB, 100);
+	RunTest(Clear_Test, DB, 100);
+	RunTest(ReadEmpty_Test, DB, 0);
+}

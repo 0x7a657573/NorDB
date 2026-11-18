@@ -85,25 +85,8 @@ int main(int argc, char **argv)
 
 	printf("\n**********FLASH TEST**********\n");
 	
-	RunTest(FullFill_Test, DB, 1);
-	RunTest(RoundRobin_Test, DB, 1);
-	RunTest(OverWrite_Test, DB, 1);
-	RunTest(WriteRead_Time_Test, DB, 100);
-	RunTest(CRC_DetectsCorruption_Test, DB, 0);
-	RunTest(PowerLoss_PhantomRecord_Test, DB, 0);
-	RunTest(ErasedCrc_Test, DB, 0);
-	RunTest(FreeRecord_Accuracy_Test, DB, 0);
-	RunTest(IncompatibleHeader_Test, DB, 0);
-	RunTest(FifoOrder_Wrap_Test, DB, 0);
-	RunTest(PowerLoss_SectorHeader_Test, DB, 0);
-	RunTest(PowerLoss_Erase_Test, DB, 0);
-	RunTest(InitParams_Test, DB, 0);
-	RunTest(IoFault_Test, DB, 0);
 	/* stride 32: about 16 positions * 512 writes * 5 ms = 41 s. */
-	RunTest(AmbiguousIoFault_Test, DB, 32);
-	RunTest(DeleteDB_Test, DB, 100);
-	RunTest(Clear_Test, DB, 100);
-	RunTest(ReadEmpty_Test, DB, 0);
+	RunFlashTests(DB, 32);
 
 	result = TestSummary();
 

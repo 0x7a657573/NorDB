@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.22)
 
+add_subdirectory(Mock)
+
 set(SOURCE
     SPI_example.c
     ../../src/NorDB.c
