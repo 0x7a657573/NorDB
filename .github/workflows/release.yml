@@ -11,14 +11,16 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    env:
-      BUILD_DIR: ${{ runner.temp }}/build
 
     steps:
       - name: Check out source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Set build dir
+        shell: bash
+        run: echo "BUILD_DIR=$RUNNER_TEMP/build" >> "$GITHUB_ENV"
 
       - name: Install build dependencies
         shell: bash
