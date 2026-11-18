@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --no-install-recommends -y ninja-build libusb-1.0-dev
+          sudo apt-get install --no-install-recommends -y ninja-build libusb-1.0-0-dev
 
       - name: Check tag version
         shell: bash
