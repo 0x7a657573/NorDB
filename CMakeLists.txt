@@ -12,7 +12,7 @@ set(LIBRARIES
     NorDB
 )
 
-project(${PROJECT_NAME} C)
+project(${PROJECT_NAME} VERSION 0.1.0 LANGUAGES C)
 
 add_library(${PROJECT_NAME} src)
 
