@@ -52,17 +52,21 @@ int main(int argc, char **argv)
 		sector_count = (uint32_t)strtoul(argv[2], NULL, 0);
 
 	NorDB_HWLayer *Flash_HW = FlashDB_Init(partition, sector_count, &xSPI);
+	NorDB_t *DB = NULL;
+	int result;
 	if (!Flash_HW)
 	{
 		printf("Error: FlashDB_Init failed\n");
-		return EXIT_FAILURE;
+		result = EXIT_FAILURE;
+		goto cleanup;
 	}
 			
-	NorDB_t *DB = NorDB(Flash_HW, GetDummyRecordSize());
+	DB = NorDB(Flash_HW, GetDummyRecordSize());
 	if (!DB)
 	{
 		printf("Error: NorDB init failed\n");
-		return EXIT_FAILURE;
+		result = EXIT_FAILURE;
+		goto cleanup;
 	}
 	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
 	uint32_t Sector_Number = DB->DB_ll->SectorNumber;
@@ -101,7 +105,13 @@ int main(int argc, char **argv)
 	RunTest(Clear_Test, DB, 100);
 	RunTest(ReadEmpty_Test, DB, 0);
 
-	return TestSummary();
+	result = TestSummary();
+
+cleanup:
+	NorDB_Destroy(DB);
+	Flashll_Del(Flash_HW);
+	CH341DeviceRelease();
+	return result;
 }
 
 

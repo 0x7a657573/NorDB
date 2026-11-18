@@ -35,10 +35,12 @@ int main(int argc, char **argv)
 	}
 
 	NorDB_t *DB = NorDB(Ram_Hw, GetDummyRecordSize());
+	int result;
 	if (!DB)
 	{
 		printf("Error: NorDB init failed\n");
-		return EXIT_FAILURE;
+		result = EXIT_FAILURE;
+		goto cleanup;
 	}
 
 	uint32_t Sector_Size   = DB->DB_ll->SectorSize;
@@ -69,5 +71,10 @@ int main(int argc, char **argv)
 	RunTest(Clear_Test, DB, 100);
 	RunTest(ReadEmpty_Test, DB, 0);
 	
-	return TestSummary();
+	result = TestSummary();
+
+cleanup:
+	NorDB_Destroy(DB);
+	Ramll_Del(Ram_Hw);
+	return result;
 }

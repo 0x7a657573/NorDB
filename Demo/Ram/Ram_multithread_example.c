@@ -172,6 +172,7 @@ int main(int argc, char **argv)
 	if (!DB)
 	{
 		printf("Error: NorDB init failed\n");
+		Ramll_Del(Ram_Hw);
 		return EXIT_FAILURE;
 	}
 
@@ -187,6 +188,9 @@ int main(int argc, char **argv)
 	pthread_t rthread;
 	reader_ctx_t rctx;
 	shared_state_t shared;
+	int result = EXIT_SUCCESS;
+	int writers_created = 0;
+	bool reader_created = false;
 
 	pthread_mutex_init(&shared.lock, NULL);
 	pthread_cond_init(&shared.cond, NULL);
@@ -200,8 +204,10 @@ int main(int argc, char **argv)
 	if (pthread_create(&rthread, NULL, reader_thread, &rctx) != 0)
 	{
 		printf("Error: pthread_create failed (reader)\n");
-		return EXIT_FAILURE;
+		result = EXIT_FAILURE;
+		goto sync_cleanup;
 	}
+	reader_created = true;
 
 	for (int i = 0; i < thread_count; i++)
 	{
@@ -213,17 +219,28 @@ int main(int argc, char **argv)
 		if (pthread_create(&threads[i], NULL, writer_thread, &ctx[i]) != 0)
 		{
 			printf("Error: pthread_create failed (i=%d)\n", i);
-			return EXIT_FAILURE;
+			pthread_mutex_lock(&shared.lock);
+			shared.writers_total = i;
+			pthread_cond_broadcast(&shared.cond);
+			pthread_mutex_unlock(&shared.lock);
+			result = EXIT_FAILURE;
+			break;
 		}
+		writers_created++;
 	}
 
-	for (int i = 0; i < thread_count; i++)	
+	for (int i = 0; i < writers_created; i++)
 		pthread_join(threads[i], NULL);
 
-	pthread_join(rthread, NULL);
+	if (reader_created)
+		pthread_join(rthread, NULL);
+
+sync_cleanup:
 
 	pthread_mutex_destroy(&shared.lock);
 	pthread_cond_destroy(&shared.cond);
+	if (result != EXIT_SUCCESS)
+		goto db_cleanup;
 
 	printf("\nThreads done. total_written=%u total_read=%u unread_now=%u\n",
 			shared.total_written,
@@ -232,8 +249,13 @@ int main(int argc, char **argv)
 	if (shared.total_written != shared.total_read || NorDB_Get_TotalUnreadRecord(DB) != 0)
 	{
 		printf("Error: multi-thread consistency check failed\n");
-		return EXIT_FAILURE;
+		result = EXIT_FAILURE;
 	}
-	printf("Done\n");
-	return EXIT_SUCCESS;
+	else
+		printf("Done\n");
+
+db_cleanup:
+	NorDB_Destroy(DB);
+	Ramll_Del(Ram_Hw);
+	return result;
 }
