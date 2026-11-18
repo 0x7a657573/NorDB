@@ -69,10 +69,30 @@ bool Filell_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 
 	if((address <= ptr->Total_Size) && (len <= ptr->Total_Size - address))
 	{
-        if(nordb_fseek(ptr->fileid, address, SEEK_SET)!=0)
+        if(len==0)
+            return false;
+        /*programming only clears bits, like NOR flash*/
+        uint8_t buffer[32];
+        uint32_t offset = 0;
+        while(offset < len)
+        {
+            uint16_t chunk_len = len - offset;
+            if(chunk_len > sizeof(buffer))
+                chunk_len = sizeof(buffer);
+
+            if(nordb_fseek(ptr->fileid, address + offset, SEEK_SET)!=0)
                 return false;
-        if(nordb_fwrite(ptr->fileid,data,len)!=1)
+            if(nordb_fread(ptr->fileid, buffer, chunk_len)!=1)
                 return false;
+            for(uint16_t i=0;i<chunk_len;i++)
+                buffer[i] &= data[offset+i];
+
+            if(nordb_fseek(ptr->fileid, address + offset, SEEK_SET)!=0)
+                return false;
+            if(nordb_fwrite(ptr->fileid,buffer,chunk_len)!=1)
+                return false;
+            offset += chunk_len;
+        }
         return nordb_fflush(ptr->fileid)==0 && nordb_fsync(ptr->fileid)==0;
 	}
 	return false;
