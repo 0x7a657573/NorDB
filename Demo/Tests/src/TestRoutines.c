@@ -700,9 +700,6 @@ done:
 
 #define ERASED_CRC_MAX_PAYLOAD 254
 
-/* plain CRC8 of NorDB.c, not declared in NorDB.h */
-unsigned NorDB_crc8x_fast(void const *mem, size_t len);
-
 /* fresh storage; with two or more slots per sector one valid record, then the next slot of
    that sector, else (single slot) slot 0 of sector 0 where the first write would go; the
    phantom slot is marked unread with `partial` bytes of payload written (0 = erased slot)

@@ -62,6 +62,8 @@ typedef struct __attribute__((__packed__))
 
 
 NorDB_t *NorDB(NorDB_HWLayer *hw,uint16_t RecordSize);
+/* plain CRC8; stored record checksums map 0xFF to 0xFE */
+unsigned NorDB_crc8x_fast(void const *mem, size_t len);
 bool	 NorDB_Clear(NorDB_t *db);
 bool	 NorDB_Format(NorDB_HWLayer *hw);
 uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData);
