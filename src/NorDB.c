@@ -9,7 +9,7 @@
 #include <string.h>
 #include <stddef.h>
 
-#define nordb_GetBitStatus(bytes,index) ((bytes[index/4]>>((index*2)%8))&0b11)
+#define nordb_GetBitStatus(bytes,index) ((bytes[index/4]>>((index*2)%8))&3)
 
 #define Is_TrueHeader(db,Header) 	(Header->Magic==NorDB_Magic && \
 									 Header->Vertion==NorDB_RVer && \
@@ -17,6 +17,7 @@
 
 static bool NorDB_SyncData_Locked(NorDB_t *db);
 static bool NorDB_Set_Read_Header_In_sector(NorDB_t *db,uint32_t Point_Adr);
+static bool NorDB_Sync_If_Needed_Locked(NorDB_t *db);
 
 static inline void NorDB_LogHeaderMismatch(NorDB_t *db, uint16_t sector, NorDB_Header_t *Header, const char *where)
 {
@@ -603,6 +604,26 @@ static bool NorDB_Set_Read_Header_In_sector(NorDB_t *db,uint32_t Point_Adr)
   	return NorDB_Hw_Write(hw,SecNumber*hw->SectorSize + ByteAddress,&data,1);
 }
 
+static bool NorDB_Get_Record_Status(NorDB_t *db,uint32_t Point_Adr,uint8_t *Status)
+{
+	NorDB_HWLayer *hw = db->DB_ll;
+	uint32_t SecNumber = Point_Adr/hw->SectorSize;
+	Point_Adr%=hw->SectorSize;
+	int RecordIndex = ((Point_Adr - db->Header_Size)/db->Record_Size);
+	int ByteAddress = (RecordIndex / 4) + sizeof(NorDB_Header_t);
+	uint8_t data[1] = {0};
+
+	if(!NorDB_Hw_Read(hw,SecNumber*hw->SectorSize + ByteAddress,data,1))
+		return false;
+	*Status = nordb_GetBitStatus(data,RecordIndex%4);
+	return true;
+}
+
+static bool NorDB_Sync_If_Needed_Locked(NorDB_t *db)
+{
+	return db->DB_ll->Synced || NorDB_SyncData_Locked(db);
+}
+
 bool NorDB_Clear(NorDB_t *db)
 {
 	if(db==NULL)
@@ -612,6 +633,11 @@ bool NorDB_Clear(NorDB_t *db)
 	bool ok = true;
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
+	if(!NorDB_Sync_If_Needed_Locked(db))
+	{
+		NorDB_sem_Unlock(&hw->sema);
+		return false;
+	}
 	info_log("NorDB clear begin: unread=%u\r\n", hw->TotalUnreadRecord);
 
 	// Erase Sector one by one
@@ -629,6 +655,7 @@ bool NorDB_Clear(NorDB_t *db)
 		}
 		if(!NorDB_Set_Read_Header_In_sector(db,Record))
 		{
+			hw->Synced = false;
 			ok = false;
 			break;
 		}
@@ -692,6 +719,8 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
 
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
+	if(!NorDB_Sync_If_Needed_Locked(db))
+		goto fail;
 
  	uint32_t Record;
 	if(!NorDB_GetWriteable_Record(db,&Record))
@@ -706,6 +735,14 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
 	if(!NorDB_Set_Write_Header_In_sector(db,Record))
 	{
 		err_log("NorDB_AddRecord failed: can not mark adr=%u\r\n", Record);
+		uint8_t Status;
+		if(!NorDB_Get_Record_Status(db,Record,&Status))
+		{
+			hw->Synced = false;
+			goto fail;
+		}
+		if(Status == nordb_UnReadMark)
+			goto fail_mark;
 		goto fail;
 	}
 
@@ -747,7 +784,8 @@ uint32_t NorDB_AddRecord(NorDB_t *db,void *RecoedData)
 
 fail_mark:
 	/*best effort: the slot is marked unread but holds no valid record*/
-	NorDB_Set_Read_Header_In_sector(db,Record);
+	if(!NorDB_Set_Read_Header_In_sector(db,Record))
+		hw->Synced = false;
 fail:
 	/*unlock io*/
 	NorDB_sem_Unlock(&hw->sema);
@@ -768,6 +806,11 @@ uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData)
 
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
+	if(!NorDB_Sync_If_Needed_Locked(db))
+	{
+		NorDB_sem_Unlock(&hw->sema);
+		return 0;
+	}
 
 	while(1)
 	{
@@ -788,11 +831,17 @@ uint32_t NorDB_ReadRecord(NorDB_t *db,void *RecoedData)
 			return 0;
 		}
 
-		/*
-		 * Can not mark it read: keep it unread (at-least-once) so it is
-		 * delivered again on a retry instead of being lost
-		 */
-		if(!NorDB_Set_Read_Header_In_sector(db,Record))
+		/* Keep it unread on an uncertain mark (at-least-once delivery). */
+		bool Marked = NorDB_Set_Read_Header_In_sector(db,Record);
+		if(!Marked)
+		{
+			uint8_t Status;
+			bool StatusRead = NorDB_Get_Record_Status(db,Record,&Status);
+			if(!StatusRead)
+				hw->Synced = false;
+			Marked = StatusRead && Status == nordb_ReadMark;
+		}
+		if(!Marked)
 		{
 			NorDB_sem_Unlock(&hw->sema);
 			return 0;
@@ -845,6 +894,11 @@ uint32_t NorDB_Get_TotalUnreadRecord(NorDB_t *db)
 
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
+	if(!NorDB_Sync_If_Needed_Locked(db))
+	{
+		NorDB_sem_Unlock(&hw->sema);
+		return 0;
+	}
 
 	uint32_t unread = hw->TotalUnreadRecord;
 
@@ -952,6 +1006,11 @@ uint32_t NorDB_Get_FreeRecord(NorDB_t *db)
 
 	/*lock io*/
 	NorDB_sem_Lock(&hw->sema);
+	if(!NorDB_Sync_If_Needed_Locked(db))
+	{
+		NorDB_sem_Unlock(&hw->sema);
+		return 0;
+	}
 
 	uint32_t Free = NorDB_Count_Writable_Record(db);
 

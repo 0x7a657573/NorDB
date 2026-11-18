@@ -1754,6 +1754,228 @@ bool IoFault_Test(NorDB_t *DB, char *name, int count)
 	return true;
 }
 
+/* ---- AmbiguousIoFault_Test: writes can report failure after reaching flash ---- */
+static NorDB_HWLayer *Amb_hw;
+static bool (*Amb_orig_write)(void*, uint32_t, uint8_t*, uint16_t);
+static bool (*Amb_orig_erase)(void*, uint32_t);
+static uint32_t Amb_mutating_calls;
+static uint32_t Amb_fail_at;
+static bool Amb_fired;
+static uint8_t Amb_record[255];
+
+static bool Amb_Write(void *p, uint32_t a, uint8_t *d, uint16_t l)
+{
+	bool result = Amb_orig_write(p, a, d, l);
+	Amb_mutating_calls++;
+	if(Amb_fail_at != 0 && Amb_mutating_calls == Amb_fail_at)
+	{
+		Amb_fired = true;
+		Amb_fail_at = 0;
+		return false;
+	}
+	return result;
+}
+
+static bool Amb_Erase(void *p, uint32_t a)
+{
+	bool result = Amb_orig_erase(p, a);
+	Amb_mutating_calls++;
+	if(Amb_fail_at != 0 && Amb_mutating_calls == Amb_fail_at)
+	{
+		Amb_fired = true;
+		Amb_fail_at = 0;
+		return false;
+	}
+	return result;
+}
+
+static void Amb_Install(NorDB_HWLayer *hw, uint32_t fail_at)
+{
+	Amb_hw = hw;
+	Amb_orig_write = hw->WriteBuffer;
+	Amb_orig_erase = hw->SectorErace;
+	hw->WriteBuffer = Amb_Write;
+	hw->SectorErace = Amb_Erase;
+	Amb_mutating_calls = 0;
+	Amb_fail_at = fail_at;
+	Amb_fired = false;
+}
+
+static void Amb_Remove(void)
+{
+	Amb_hw->WriteBuffer = Amb_orig_write;
+	Amb_hw->SectorErace = Amb_orig_erase;
+}
+
+static void Amb_MakeRecord(uint16_t size, uint32_t seq)
+{
+	for(uint16_t i = 0; i < size; i++)
+		Amb_record[i] = (uint8_t)(seq * 7u + i);
+	for(uint16_t i = 0; i < 4 && i < size; i++)
+		Amb_record[i] = (uint8_t)(seq >> (8 * i));
+}
+
+static bool Amb_CheckRecord(uint16_t size, uint32_t seq)
+{
+	uint32_t actual = Amb_record[0] | ((uint32_t)Amb_record[1] << 8) |
+			((uint32_t)Amb_record[2] << 16) | ((uint32_t)Amb_record[3] << 24);
+	if(actual != seq)
+		return false;
+	for(uint16_t i = 4; i < size; i++)
+		if(Amb_record[i] != (uint8_t)(seq * 7u + i))
+			return false;
+	return true;
+}
+
+static bool Ambiguous_Run(NorDB_t *DB, uint32_t fail_at, uint32_t *mutating_calls)
+{
+	NorDB_HWLayer *hw = DB->DB_ll;
+	NorDB_t *test_db = NULL;
+	NorDB_t *clean_db = NULL;
+	bool installed = false;
+	bool ok = false;
+	uint32_t per_sector = 0;
+	uint32_t records = 0;
+	uint32_t next_write = 0;
+	uint32_t next_read = 0;
+	uint32_t pending = 0;
+	uint16_t payload_size = (uint16_t)((hw->SectorSize - sizeof(NorDB_Header_t) - 1) / 6);
+	if(payload_size > sizeof(Amb_record))
+		payload_size = sizeof(Amb_record);
+	if(payload_size < 4)
+		payload_size = 4;
+
+	if(!NorDB_Format(hw))
+		goto done;
+	test_db = NorDB(hw, payload_size);
+	if(test_db == NULL)
+		goto done;
+	Amb_Install(hw, fail_at);
+	installed = true;
+	per_sector = test_db->Record_NumberInSector;
+	records = per_sector * hw->SectorNumber;
+	for(uint32_t lap = 0; lap < 2; lap++)
+	{
+		for(uint32_t i = 0; i < records; i++)
+		{
+			bool added = false;
+			for(uint32_t attempt = 0; attempt < 4; attempt++)
+			{
+				Amb_MakeRecord(payload_size, next_write);
+				if(NorDB_AddRecord(test_db, Amb_record) != 0)
+				{
+					added = true;
+					next_write++;
+					pending++;
+					break;
+				}
+				if(NorDB_Get_TotalUnreadRecord(test_db) != pending)
+					goto done;
+			}
+			if(!added || NorDB_Get_TotalUnreadRecord(test_db) != pending)
+				goto done;
+
+			if(pending > 0)
+			{
+				bool read = false;
+				for(uint32_t attempt = 0; attempt < 4; attempt++)
+				{
+					if(NorDB_ReadRecord(test_db, Amb_record) != 0)
+					{
+						read = true;
+						break;
+					}
+					if(NorDB_Get_TotalUnreadRecord(test_db) != pending)
+						goto done;
+				}
+				if(!read || !Amb_CheckRecord(payload_size, next_read))
+					goto done;
+				next_read++;
+				pending--;
+			}
+			if(NorDB_Get_TotalUnreadRecord(test_db) != pending)
+				goto done;
+		}
+	}
+	while(pending > 0)
+	{
+		bool read = false;
+		for(uint32_t attempt = 0; attempt < 4; attempt++)
+		{
+			if(NorDB_ReadRecord(test_db, Amb_record) != 0)
+			{
+				read = true;
+				break;
+			}
+			if(NorDB_Get_TotalUnreadRecord(test_db) != pending)
+				goto done;
+		}
+		if(!read || !Amb_CheckRecord(payload_size, next_read))
+			goto done;
+		next_read++;
+		pending--;
+		if(NorDB_Get_TotalUnreadRecord(test_db) != pending)
+			goto done;
+	}
+
+	/* A failed add is never delivered: it leaves the slot read or never marked. */
+	ok = next_read == next_write && pending == 0 &&
+		NorDB_Get_TotalUnreadRecord(test_db) == 0 &&
+		Amb_fired == (fail_at != 0);
+
+done:
+	if(installed)
+		Amb_Remove();
+	if(mutating_calls != NULL)
+		*mutating_calls = Amb_mutating_calls;
+	NorDB_Destroy(test_db);
+	if(!NorDB_Format(hw))
+		ok = false;
+	else
+	{
+		clean_db = NorDB(hw, GetDummyRecordSize());
+		if(clean_db == NULL)
+			ok = false;
+		else
+			NorDB_Destroy(clean_db);
+	}
+	return ok;
+}
+
+bool AmbiguousIoFault_Test(NorDB_t *DB, char *name, int count)
+{
+	strcpy(name, "Ambiguous IO Fault");
+
+	printf("--->NorDB Ambiguous IO Fault Test\n");
+	uint32_t calls = 0;
+	uint32_t stride = count > 0 ? (uint32_t)count : 1;
+	if(!Ambiguous_Run(DB, 0, &calls) || calls == 0)
+	{
+		printf("\tError: workload dry run failed\n");
+		return false;
+	}
+	uint32_t positions = 0;
+	for(uint32_t i = 1; i <= calls; i += stride)
+	{
+		if(!Ambiguous_Run(DB, i, NULL))
+		{
+			printf("\tError: ambiguous mutation at call %u failed\n", i);
+			return false;
+		}
+		positions++;
+	}
+	if((calls - 1) % stride != 0 && !Ambiguous_Run(DB, calls, NULL))
+	{
+		printf("\tError: ambiguous mutation at call %u failed\n", calls);
+		return false;
+	}
+	if((calls - 1) % stride != 0)
+		positions++;
+	printf("\tVerified %u ambiguous mutations across %u fault positions (stride %u)\n\n",
+		calls, positions, stride);
+	return true;
+}
+
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)
 {
     char testName[20] = {0};

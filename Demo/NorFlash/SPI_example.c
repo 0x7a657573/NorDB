@@ -95,6 +95,8 @@ int main(int argc, char **argv)
 	RunTest(PowerLoss_Erase_Test, DB, 0);
 	RunTest(InitParams_Test, DB, 0);
 	RunTest(IoFault_Test, DB, 0);
+	/* stride 32: about 16 positions * 512 writes * 5 ms = 41 s. */
+	RunTest(AmbiguousIoFault_Test, DB, 32);
 	RunTest(DeleteDB_Test, DB, 100);
 	RunTest(Clear_Test, DB, 100);
 	RunTest(ReadEmpty_Test, DB, 0);

@@ -317,7 +317,7 @@ NorDB_HWLayer *MyBackend_Init() {
 
 *   A failed header read never leads to a sector being erased or formatted; `NorDB_AddRecord` stops searching and returns `0`.
 *   `NorDB_AddRecord` returns `0` and does not count the record if marking the slot, writing the payload or the read-back fails. A slot that was already marked is marked read again on a best-effort basis.
-*   `NorDB_ReadRecord` returns `0` and leaves the record unread, so it is delivered again by the next call (at-least-once). This includes a failure to mark the record read after it was read correctly.
+*   `NorDB_ReadRecord` returns `0` and leaves the record unread, so it is delivered again by the next call (at-least-once). A failed status-mark write is verified by reading the mark back; if the state can not be resolved, it is rebuilt from flash before the next operation.
 *   `NorDB()` fails (returns `NULL`) if the storage can not be scanned, and keeps the previous runtime state.
 *   `NorDB_Clear()` and `NorDB_Format()` stop at the first error and return `false`.
 

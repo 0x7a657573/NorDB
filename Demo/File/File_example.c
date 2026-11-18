@@ -77,6 +77,7 @@ int main(int argc, char **argv)
 	RunTest(PowerLoss_Erase_Test, DB, 0);
 	RunTest(InitParams_Test, DB, 0);
 	RunTest(IoFault_Test, DB, 0);
+	RunTest(AmbiguousIoFault_Test, DB, 1);
 	RunTest(DeleteDB_Test, DB, 10);
 	RunTest(Clear_Test, DB, 100);
 	RunTest(ReadEmpty_Test, DB, 0);
