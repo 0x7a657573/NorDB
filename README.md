@@ -235,7 +235,7 @@ The flash backend assumes the following flash geometry:
 
 Waiting for a program or erase to finish is bounded to `NORDB_FLASH_BUSY_MAX_POLL` status register reads (default 4000000: covers the ~400 ms sector erase even at ~0.1 us per poll, so a healthy chip never times out). On timeout the operation returns `false`, which the core handles as an IO error instead of hanging; lower the macro if a dead chip must be detected faster on a slow bus.
 
-To use the flash backend, you need to provide an SPI implementation by creating a `SpiBus_t` struct and setting the `SPI_WriteRead` function pointer.
+To use the flash backend, you need to provide an SPI implementation by creating a `SpiBus_t` struct and setting the `SPI_WriteRead` function pointer. `SPI_WriteRead` now returns `bool` (`true` = transfer completed); out-of-tree SPI glue must be updated and must report transfer failures.
 
 ### RAM Backend
 

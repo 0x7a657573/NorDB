@@ -24,9 +24,27 @@
 
 bool Searching_ForDevice(SpiBus_t *spi)
 {
+	uint8_t status = 0;
+	uint8_t status_cmd[8] = {0x05};
 	uint8_t wr_buff[32]={0x9f};
     uint8_t rd_buff[32]={0xff};
-	spi->SPI_WriteRead(spi->param,wr_buff,1,rd_buff,3);
+	bool ready = false;
+	for(uint32_t n=0; n<NORDB_FLASH_BUSY_MAX_POLL; n++)
+	{
+		if(!spi->SPI_WriteRead(spi->param,status_cmd,1,&status,1))
+			return false;
+		if((status & 0x01) == 0x00)
+		{
+			spi->MayBeBusy = false;
+			ready = true;
+			break;
+		}
+	}
+	if(!ready)
+		return false;
+
+	if(!spi->SPI_WriteRead(spi->param,wr_buff,1,rd_buff,3))
+		return false;
 	spi->DevOnBus->JEDECID = (rd_buff[0] << 16) | (rd_buff[1] << 8) | rd_buff[2]; //JEDEC ID
 	
 	switch (spi->DevOnBus->JEDECID & 0x000000FF)
@@ -103,14 +121,14 @@ bool Searching_ForDevice(SpiBus_t *spi)
 	return true;
 }
 
-void FLASH_WriteEnable(void *Param)
+bool FLASH_WriteEnable(void *Param)
 {
 	FlashDev_t *FL =(FlashDev_t*) Param; 
 	SpiBus_t *spi =(SpiBus_t*) FL->SPI;
 	//debug_info("w25qxx Write Enable\r\n");
 	uint8_t  cmd[8] = {0};
 	cmd[0] = 0x06;
-	spi->SPI_WriteRead(spi->param,cmd,1,NULL,0);
+	return spi->SPI_WriteRead(spi->param,cmd,1,NULL,0);
 }
 
 /*false when the chip is still busy after NORDB_FLASH_BUSY_MAX_POLL status reads*/
@@ -125,11 +143,16 @@ bool FLASH_WaitForWriteEnd(void *Param)
 	//debug_info("w25qxx wait for flash ready\r\n");
 	for(uint32_t n=0; n<NORDB_FLASH_BUSY_MAX_POLL; n++)
 	{
-		spi->SPI_WriteRead(spi->param,cmd,1,&StatusRegister1,1);
+		if(!spi->SPI_WriteRead(spi->param,cmd,1,&StatusRegister1,1))
+		{
+			spi->MayBeBusy = true;
+			return false;
+		}
 		if((StatusRegister1 & 0x01) == 0x00)
 			return true;
 	}
 	err_log("w25qxx busy timeout after %u polls\r\n", NORDB_FLASH_BUSY_MAX_POLL);
+	spi->MayBeBusy = true;
 	return false;
 }
 
@@ -150,7 +173,12 @@ bool FLASH_EraseSector(void *Param,uint32_t SectorAddr)
 		NorDB_sem_Unlock(&spi->xSemaphore);
 		return false;
 	}
-	FLASH_WriteEnable(Param);
+	spi->MayBeBusy = false;
+	if(!FLASH_WriteEnable(Param))
+	{
+		NorDB_sem_Unlock(&spi->xSemaphore);
+		return false;
+	}
 
 	uint8_t  cmd[8] = {0};
 	uint32_t i = 0;
@@ -167,7 +195,12 @@ bool FLASH_EraseSector(void *Param,uint32_t SectorAddr)
 	cmd[i++] = ((SectorAddr & 0xFF0000) >> 16);
 	cmd[i++] = ((SectorAddr & 0xFF00) >> 8);
 	cmd[i++] = (SectorAddr & 0xFF);
-	spi->SPI_WriteRead(spi->param,cmd,i,NULL,0);
+	if(!spi->SPI_WriteRead(spi->param,cmd,i,NULL,0))
+	{
+		spi->MayBeBusy = true;
+		NorDB_sem_Unlock(&spi->xSemaphore);
+		return false;
+	}
 	
 	bool ok = FLASH_WaitForWriteEnd(Param);
 
@@ -184,6 +217,15 @@ bool FLASH_ReadBuffer(void*Param, uint32_t ReadAddr, uint8_t *pBuffer,  uint16_t
 	if(ReadAddr > FL->Total_Size || NumByteToRead > FL->Total_Size - ReadAddr)
 		return false;
 	NorDB_sem_Lock(&spi->xSemaphore);
+	if(spi->MayBeBusy)
+	{
+		if(!FLASH_WaitForWriteEnd(Param))
+		{
+			NorDB_sem_Unlock(&spi->xSemaphore);
+			return false;
+		}
+		spi->MayBeBusy = false;
+	}
 	/*add Sector Offset*/
 	ReadAddr += FL->StartOffset;
 
@@ -204,9 +246,9 @@ bool FLASH_ReadBuffer(void*Param, uint32_t ReadAddr, uint8_t *pBuffer,  uint16_t
 	cmd[Index++] = ((ReadAddr & 0xFF00) >> 8);
 	cmd[Index++] = (ReadAddr & 0xFF);
 	cmd[Index++] = (0);
-	spi->SPI_WriteRead(spi->param,cmd,Index,pBuffer,NumByteToRead);
+	bool ok = spi->SPI_WriteRead(spi->param,cmd,Index,pBuffer,NumByteToRead);
 	NorDB_sem_Unlock(&spi->xSemaphore);
-	return true;
+	return ok;
 }
 
 static inline bool FLASH_WritePage(void*Param,uint32_t address,uint8_t *data,uint16_t len)
@@ -217,8 +259,15 @@ static inline bool FLASH_WritePage(void*Param,uint32_t address,uint8_t *data,uin
 	/*a page program can not cross a page*/
 	if(len > FLASH_PAGE_SIZE)
 		return false;
+	if(spi->MayBeBusy)
+	{
+		if(!FLASH_WaitForWriteEnd(Param))
+			return false;
+		spi->MayBeBusy = false;
+	}
 
-	FLASH_WriteEnable(Param);
+	if(!FLASH_WriteEnable(Param))
+		return false;
 	
 	/*opcode + 32bit address + page data*/
 	uint8_t cmd[1 + 4 + FLASH_PAGE_SIZE];
@@ -240,7 +289,11 @@ static inline bool FLASH_WritePage(void*Param,uint32_t address,uint8_t *data,uin
 	for(int j=0;j<len;j++)
 		cmd[i++] = data[j];
 
-	spi->SPI_WriteRead(spi->param,cmd,i,NULL,0);
+	if(!spi->SPI_WriteRead(spi->param,cmd,i,NULL,0))
+	{
+		spi->MayBeBusy = true;
+		return false;
+	}
 	
 	return FLASH_WaitForWriteEnd(Param);
 }
@@ -343,6 +396,7 @@ NorDB_HWLayer *FlashDB_Init(uint16_t StartSector,uint16_t TotalSector,SpiBus_t *
 			goto err_free;
 		}
 		NewBus = true;
+		spi->MayBeBusy = true;
 
 		if(!Searching_ForDevice(spi))
 			goto err_bus;

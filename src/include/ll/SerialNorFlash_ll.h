@@ -60,11 +60,12 @@ typedef struct
 typedef struct
 {
 	void *param;
-	void (*SPI_WriteRead)(void *param,uint8_t *out,uint16_t wlen,uint8_t *in,uint16_t rlen);
+	bool (*SPI_WriteRead)(void *param,uint8_t *out,uint16_t wlen,uint8_t *in,uint16_t rlen);
 	
 	NorDB_sem_t	 xSemaphore;
 	SpiDev_t	*DevOnBus;
 	uint16_t	 RefCount;	/*FlashDB handles using DevOnBus*/
+	bool		 MayBeBusy;	/*chip may still be busy after a failed operation*/
 }SpiBus_t;
 
 typedef struct

@@ -18,12 +18,15 @@
 #include "TestRoutines.h"
 
 
-void xSPI_WriteRead(void *param,uint8_t *out,uint16_t wlen,uint8_t *in,uint16_t rlen)
+bool xSPI_WriteRead(void *param,uint8_t *out,uint16_t wlen,uint8_t *in,uint16_t rlen)
 {
-	CH341ChipSelect(0, true);
-	CH341WriteSPI(out, wlen);
-	CH341ReadSPI(in, rlen);
-	CH341ChipSelect(0, false);
+	bool ok = CH341ChipSelect(0, true);
+	if(ok)
+		ok = CH341WriteSPI(out, wlen);
+	if(ok)
+		ok = CH341ReadSPI(in, rlen);
+	bool selected = CH341ChipSelect(0, false);
+	return ok && selected;
 }
 
 int main(int argc, char **argv)
@@ -37,7 +40,7 @@ int main(int argc, char **argv)
 	srand(time(NULL));
 	
 	SpiBus_t xSPI = {0};
-	void (*SPI_WriteRead)(void *param,uint8_t *out,uint16_t wlen,uint8_t *in,uint16_t rlen);
+	bool (*SPI_WriteRead)(void *param,uint8_t *out,uint16_t wlen,uint8_t *in,uint16_t rlen);
 	xSPI.param = NULL;
 	xSPI.SPI_WriteRead = xSPI_WriteRead;
 
