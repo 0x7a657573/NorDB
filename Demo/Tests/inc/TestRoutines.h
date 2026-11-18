@@ -12,6 +12,7 @@
 #include "TestConfig.h"
 
 int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count);
+int TestSummary(void);
 
 int GetDummyRecordSize(void);
 bool FullFill_Test(NorDB_t *DB, char *name, int count);

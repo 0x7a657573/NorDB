@@ -229,6 +229,11 @@ int main(int argc, char **argv)
 			shared.total_written,
 			shared.total_read,
 			NorDB_Get_TotalUnreadRecord(DB));
+	if (shared.total_written != shared.total_read || NorDB_Get_TotalUnreadRecord(DB) != 0)
+	{
+		printf("Error: multi-thread consistency check failed\n");
+		return EXIT_FAILURE;
+	}
 	printf("Done\n");
 	return EXIT_SUCCESS;
 }

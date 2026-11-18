@@ -81,5 +81,5 @@ int main(int argc, char **argv)
 	RunTest(Clear_Test, DB, 100);
 	RunTest(ReadEmpty_Test, DB, 0);
 
-	return EXIT_SUCCESS;
+	return TestSummary();
 }

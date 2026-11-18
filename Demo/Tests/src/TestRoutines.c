@@ -1,6 +1,8 @@
 #include "TestRoutines.h"
 #include <stddef.h>
 
+static int tests_run;
+static int tests_failed;
 
 typedef struct  __attribute__((__packed__))
 {
@@ -1760,14 +1762,25 @@ int RunTest(bool(*test)(NorDB_t*, char*, int), NorDB_t* DB, int count)
     char testName[20] = {0};
     double start, end;
 
+    tests_run++;
     start = GetTime();
     if(!test(DB, testName, count))
 	{
 		printf("%s Test Not Complete\n", testName);
+		tests_failed++;
 		return EXIT_FAILURE;
 	}
     end = GetTime();
     double time_spent = end - start;
     printf("Test Execution Time: %f%cs\n\n", time_spent<0.1f?(time_spent*1000.0f):time_spent, time_spent<0.1f?'m':0);
     return 0;
+}
+
+int TestSummary(void)
+{
+	if (tests_failed == 0)
+		printf("All %d tests passed\n", tests_run);
+	else
+		printf("Tests failed: %d of %d\n", tests_failed, tests_run);
+	return tests_failed == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
 }

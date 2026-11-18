@@ -29,7 +29,11 @@ void xSPI_WriteRead(void *param,uint8_t *out,uint16_t wlen,uint8_t *in,uint16_t 
 int main(int argc, char **argv)
 {
 	/*add record to DB*/
-	CH341DeviceInit();
+	if (!CH341DeviceInit())
+	{
+		printf("Error: CH341DeviceInit failed\n");
+		return EXIT_FAILURE;
+	}
 	srand(time(NULL));
 	
 	SpiBus_t xSPI = {0};
@@ -92,7 +96,7 @@ int main(int argc, char **argv)
 	RunTest(Clear_Test, DB, 100);
 	RunTest(ReadEmpty_Test, DB, 0);
 
-	return EXIT_SUCCESS;
+	return TestSummary();
 }
 
 
