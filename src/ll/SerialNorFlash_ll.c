@@ -24,6 +24,7 @@
 #define SFDP_READ_OPCODE	0x5A
 #define SFDP_BFPT_ID		0xFF00
 #define SFDP_4BAIT_ID		0xFF84
+#define FLASH_STATUS1_BLOCK_PROTECTION_MASK	0x1C /* SR1 BP0..BP2 */
 
 static inline uint32_t FLASH_WriteCommand(uint8_t *cmd,uint8_t opcode,uint8_t addrbytes,uint32_t address)
 {
@@ -331,6 +332,13 @@ bool Searching_ForDevice(SpiBus_t *spi)
 		return false;
 	if(sfdp == SFDP_NOT_FOUND && !FLASH_ConfigureFallback(spi))
 		return false;
+	if(!spi->SPI_WriteRead(spi->param,status_cmd,1,&status,1))
+		return false;
+	if(status & FLASH_STATUS1_BLOCK_PROTECTION_MASK)
+	{
+		err_log("flash is write protected (SR1=0x%02x), clear the block protection bits\r\n", status);
+		return false;
+	}
 	
 	debug_info("Flash Page Size: %d Bytes\r\n", spi->DevOnBus->PageSize);
 	debug_info("Flash Page Count: %u\r\n", spi->DevOnBus->PageCount);

@@ -195,6 +195,18 @@ int main(void)
 	static const SpiFlashMockProfile unknown_no_sfdp = {
 		{0xC8, 0x40, 0x17}, 8U * 1024U * 1024U, 0, false, 256, NULL, 0
 	};
+	static const SpiFlashMockProfile write_protected_bp0 = {
+		{0xEF, 0x40, 0x17}, 8U * 1024U * 1024U, 0x04, false, 256,
+		w25q64_sfdp, sizeof(w25q64_sfdp)
+	};
+	static const SpiFlashMockProfile write_protected_bp2 = {
+		{0xEF, 0x40, 0x17}, 8U * 1024U * 1024U, 0x10, false, 256,
+		w25q64_sfdp, sizeof(w25q64_sfdp)
+	};
+	static const SpiFlashMockProfile macronix_qe = {
+		{0xEF, 0x40, 0x17}, 8U * 1024U * 1024U, 0x40, false, 256,
+		w25q64_sfdp, sizeof(w25q64_sfdp)
+	};
 	static const SpiFlashMockProfile gigadevice = {
 		{0xC8, 0x40, 0x17}, 8U * 1024U * 1024U, 0, false, 256,
 		w25q64_sfdp, sizeof(w25q64_sfdp)
@@ -287,6 +299,36 @@ int main(void)
 		SpiFlashMock_Deinit(&mock);
 	}
 	else
+		return EXIT_FAILURE;
+	if(SpiFlashMock_Init(&mock, &write_protected_bp0))
+	{
+		bus = (SpiBus_t){.param = &mock, .SPI_WriteRead = SpiFlashMock_WriteRead};
+		flash = FlashDB_Init(0, 1, &bus);
+		if(flash)
+		{
+			Flashll_Del(flash);
+			SpiFlashMock_Deinit(&mock);
+			return EXIT_FAILURE;
+		}
+		SpiFlashMock_Deinit(&mock);
+	}
+	else
+		return EXIT_FAILURE;
+	if(SpiFlashMock_Init(&mock, &write_protected_bp2))
+	{
+		bus = (SpiBus_t){.param = &mock, .SPI_WriteRead = SpiFlashMock_WriteRead};
+		flash = FlashDB_Init(0, 1, &bus);
+		if(flash)
+		{
+			Flashll_Del(flash);
+			SpiFlashMock_Deinit(&mock);
+			return EXIT_FAILURE;
+		}
+		SpiFlashMock_Deinit(&mock);
+	}
+	else
+		return EXIT_FAILURE;
+	if(RunProfile("Macronix QE", &macronix_qe, 0) != EXIT_SUCCESS)
 		return EXIT_FAILURE;
 	return EXIT_SUCCESS;
 }

@@ -227,6 +227,8 @@ The flash backend is implemented in `src/ll/SerialNorFlash_ll.c`. It uses an SPI
 
 The backend detects geometry and opcodes from the JEDEC JESD216 SFDP tables. A uniform 4 KB erase type is required; chips larger than 16 MB use dedicated 4-byte instructions when SFDP provides them, otherwise only the first 16 MB is used. Without SFDP, only the exact JEDEC IDs of the known Winbond W25Q and W25X parts are supported; other chips must provide SFDP.
 
+Initialization fails if BP0..BP2 are set; per-block lock schemes (e.g. Winbond WPS individual block locks and the SST26 block protection register) are not detected, so writes then fail their read-back verification.
+
 The flash backend assumes the following flash geometry:
 
 *   **Page Size:** 256 bytes
