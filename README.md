@@ -408,7 +408,7 @@ T6    | Continue       | Writing...    | Sync=2 (Full) | Sync=3 (Full)
 ### CRC8 Protection (`NorDB_crc8x_fast()` in `NorDB.c`)
 
 **Implementation:**
-- CRC-8 with polynomial 0x07 (table-driven)
+- CRC-8 with polynomial 0x31, init 0xFF, refin=false, refout=false, xorout=0x00 (table-driven; "123456789" = 0xF7)
 - Applied to every record (user data only, not including CRC byte itself)
 - Stored as last byte of each record
 - A computed CRC of `0xFF` is stored as `0xFE`, so an erased CRC byte can never validate
