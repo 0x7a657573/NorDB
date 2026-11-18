@@ -1,0 +1,104 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      BUILD_DIR: ${{ runner.temp }}/build
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y ninja-build libusb-1.0-dev
+
+      - name: Check tag version
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$TAG" != v* ]]; then
+            echo "Tag must start with v: $TAG" >&2
+            exit 1
+          fi
+
+          cmake_version="$({
+            sed -nE 's/^[[:space:]]*project\([^)]*VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+)[[:space:]].*/\1/p' CMakeLists.txt
+          } | head -n 1)"
+          tag_version="${TAG#v}"
+          base_tag_version="${tag_version%%-*}"
+
+          if [[ -z "$cmake_version" || "$base_tag_version" != "$cmake_version" ]]; then
+            echo "Tag version $tag_version does not match CMake version $cmake_version" >&2
+            exit 1
+          fi
+
+          echo "Tag $TAG matches CMake version $cmake_version"
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build "$BUILD_DIR" --parallel
+
+      - name: Test
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir "$BUILD_DIR" --output-on-failure
+
+      - name: Package release
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          version="${TAG#v}"
+          prefix="NorDB-${version}/"
+          archive_base="NorDB-${version}"
+
+          git archive --format=tar.gz --prefix="$prefix" -o "${archive_base}.tar.gz" HEAD -- src LICENSE README.md
+          git archive --format=zip --prefix="$prefix" -o "${archive_base}.zip" HEAD -- src LICENSE README.md
+          sha256sum "${archive_base}.tar.gz" "${archive_base}.zip" > SHA256SUMS
+
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          version="${TAG#v}"
+          archive_base="NorDB-${version}"
+          release_args=("${archive_base}.tar.gz" "${archive_base}.zip" SHA256SUMS)
+
+          if [[ "$TAG" == *-* ]]; then
+            release_args+=(--prerelease)
+          fi
+
+          gh release create "$TAG" "${release_args[@]}" --title "NorDB $TAG" --verify-tag --generate-notes
