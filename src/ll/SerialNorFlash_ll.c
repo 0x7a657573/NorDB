@@ -21,6 +21,9 @@
 #define debug_info debug_log
 
 #define FLASH_PAGE_SIZE	256
+#define SFDP_READ_OPCODE	0x5A
+#define SFDP_BFPT_ID		0xFF00
+#define SFDP_4BAIT_ID		0xFF84
 
 static inline uint32_t FLASH_WriteCommand(uint8_t *cmd,uint8_t opcode,uint8_t addrbytes,uint32_t address)
 {
@@ -29,6 +32,244 @@ static inline uint32_t FLASH_WriteCommand(uint8_t *cmd,uint8_t opcode,uint8_t ad
 	for(uint8_t n = addrbytes; n > 0; n--)
 		cmd[i++] = (address >> ((n - 1) * 8));
 	return i;
+}
+
+typedef enum
+{
+	SFDP_NOT_FOUND,
+	SFDP_CONFIGURED,
+	SFDP_UNUSABLE,
+	SFDP_IO_ERROR
+} SfdpResult_t;
+
+static bool SFDP_Read(SpiBus_t *spi,uint32_t address,uint8_t *data,uint16_t length)
+{
+	uint8_t cmd[5] = {SFDP_READ_OPCODE,0,0,0,0};
+	cmd[1] = (uint8_t)(address >> 16);
+	cmd[2] = (uint8_t)(address >> 8);
+	cmd[3] = (uint8_t)address;
+	return spi->SPI_WriteRead(spi->param,cmd,sizeof(cmd),data,length);
+}
+
+static uint32_t SFDP_U32(const uint8_t *data)
+{
+	return (uint32_t)data[0] | ((uint32_t)data[1] << 8) |
+		((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24);
+}
+
+static bool SFDP_IsPowerOfTwo(uint32_t value)
+{
+	return value != 0 && (value & (value - 1)) == 0;
+}
+
+static bool SFDP_FindParameter(SpiBus_t *spi,uint8_t parameter_count,uint16_t id,
+	uint8_t *length,uint32_t *address,bool *found)
+{
+	uint8_t header[8];
+	*found = false;
+	for(uint8_t n = 0; n <= parameter_count; n++)
+	{
+		if(!SFDP_Read(spi,8U + 8U * n,header,sizeof(header)))
+			return false;
+		if(((uint16_t)header[0] | ((uint16_t)header[7] << 8)) == id)
+		{
+			*length = header[3];
+			*address = (uint32_t)header[4] | ((uint32_t)header[5] << 8) |
+				((uint32_t)header[6] << 16);
+			*found = true;
+			return true;
+		}
+	}
+	return true;
+}
+
+static SfdpResult_t SFDP_Configure(SpiBus_t *spi)
+{
+	uint8_t bfpt_length;
+	uint8_t parameter_length;
+	uint32_t parameter_address;
+	uint8_t bfpt[36] = {0};
+	uint8_t dword11_data[4];
+	uint8_t bait_data[8];
+	uint8_t erase_type = 0;
+	uint8_t erase_opcode = 0;
+	uint32_t dword1;
+	uint32_t dword2;
+	uint32_t dword8;
+	uint32_t dword9;
+	uint32_t dword11;
+	uint32_t bait1;
+	uint32_t bait2;
+	uint32_t density_bits;
+	uint32_t size;
+	uint16_t page_size = FLASH_PAGE_SIZE;
+	uint8_t parameter_count;
+	bool has_bait;
+
+	if(!SFDP_Read(spi,0,bfpt,8))
+		return SFDP_IO_ERROR;
+	if(bfpt[0] != 'S' || bfpt[1] != 'F' || bfpt[2] != 'D' ||
+		bfpt[3] != 'P' || bfpt[5] != 1)
+		return SFDP_NOT_FOUND;
+	parameter_count = bfpt[6];
+	bool parameter_found;
+	if(!SFDP_FindParameter(spi,parameter_count,SFDP_BFPT_ID,
+		&bfpt_length,&parameter_address,&parameter_found))
+		return SFDP_IO_ERROR;
+	if(!parameter_found || bfpt_length < 9)
+		return SFDP_NOT_FOUND;
+	if(bfpt_length > 16)
+		bfpt_length = 16;
+	if(!SFDP_Read(spi,parameter_address,bfpt,sizeof(bfpt)))
+		return SFDP_IO_ERROR;
+	dword1 = SFDP_U32(bfpt);
+	dword2 = SFDP_U32(&bfpt[4]);
+	dword8 = SFDP_U32(&bfpt[28]);
+	dword9 = SFDP_U32(&bfpt[32]);
+
+	if(dword2 & 0x80000000U)
+	{
+		uint32_t exponent = dword2 & 0x7FFFFFFFU;
+		if(exponent > 31)
+			return SFDP_NOT_FOUND;
+		density_bits = (uint32_t)1U << exponent;
+	}
+	else
+		density_bits = dword2 + 1U;
+	if((density_bits & 7U) != 0)
+		return SFDP_NOT_FOUND;
+	size = density_bits / 8U;
+	if(size < 64U * 1024U || size > 256U * 1024U * 1024U ||
+		!SFDP_IsPowerOfTwo(size))
+		return SFDP_NOT_FOUND;
+
+	if((dword1 & 3U) != 1U)
+	{
+		err_log("SFDP flash has no uniform 4 KB erase support\r\n");
+		return SFDP_UNUSABLE;
+	}
+	for(uint8_t n = 0; n < 4; n++)
+	{
+		uint32_t erase_dword = n < 2 ? dword8 : dword9;
+		uint8_t shift = (n % 2) * 16;
+		uint8_t erase_size = (uint8_t)(erase_dword >> shift);
+		uint8_t opcode = (uint8_t)(erase_dword >> (shift + 8));
+		if(erase_size == 12 && opcode != 0)
+		{
+			erase_type = n + 1;
+			erase_opcode = opcode;
+			break;
+		}
+	}
+	if(erase_type == 0)
+	{
+		err_log("SFDP flash has no 4 KB erase type in DWORD8/9\r\n");
+		return SFDP_UNUSABLE;
+	}
+
+	uint8_t address_mode = (uint8_t)((dword1 >> 17) & 3U);
+	if(bfpt_length >= 11)
+	{
+		if(!SFDP_Read(spi,parameter_address + 40,dword11_data,sizeof(dword11_data)))
+			return SFDP_IO_ERROR;
+		dword11 = SFDP_U32(dword11_data);
+		uint8_t exponent = (uint8_t)((dword11 >> 4) & 0x0F);
+		if(exponent >= 1 && exponent < 16)
+			page_size = (uint16_t)(1U << exponent);
+	}
+	spi->DevOnBus->PageSize = page_size < FLASH_PAGE_SIZE ? page_size : FLASH_PAGE_SIZE;
+	if(!SFDP_FindParameter(spi,parameter_count,SFDP_4BAIT_ID,
+		&parameter_length,&parameter_address,&has_bait))
+		return SFDP_IO_ERROR;
+	has_bait = has_bait && parameter_length >= 2;
+	if(has_bait)
+	{
+		if(!SFDP_Read(spi,parameter_address,bait_data,sizeof(bait_data)))
+			return SFDP_IO_ERROR;
+		bait1 = SFDP_U32(bait_data);
+		bait2 = SFDP_U32(&bait_data[4]);
+	}
+
+	spi->DevOnBus->ID = SfdpFlash;
+	spi->DevOnBus->SectorSize = 0x1000;
+	spi->DevOnBus->BlockSize = 0x10000;
+	spi->DevOnBus->SectorCount = size / spi->DevOnBus->SectorSize;
+	spi->DevOnBus->AddrBytes = 3;
+	spi->DevOnBus->SectorEraseOpcode = erase_opcode;
+	spi->DevOnBus->FastReadOpcode = 0x0B;
+	spi->DevOnBus->PageProgramOpcode = 0x02;
+	if(size > 16U * 1024U * 1024U || address_mode == 2)
+	{
+		if(address_mode == 2 && !has_bait)
+		{
+			err_log("SFDP flash is 4-byte-only without 4BAIT support\r\n");
+			return SFDP_UNUSABLE;
+		}
+		bool four_byte_ok = has_bait && (bait1 & (1U << 1)) != 0 &&
+			(bait1 & (1U << 6)) != 0 &&
+			(bait1 & (1U << (8 + erase_type))) != 0 &&
+			((bait2 >> ((erase_type - 1) * 8)) & 0xFFU) != 0;
+		if(four_byte_ok)
+		{
+			spi->DevOnBus->AddrBytes = 4;
+			spi->DevOnBus->SectorEraseOpcode =
+				(uint8_t)(bait2 >> ((erase_type - 1) * 8));
+			spi->DevOnBus->FastReadOpcode = 0x0C;
+			spi->DevOnBus->PageProgramOpcode = 0x12;
+		}
+		else if(size > 16U * 1024U * 1024U)
+		{
+			err_log("SFDP flash has no usable 4-byte instructions; using first 16 MB\r\n");
+			spi->DevOnBus->SectorCount = (16U * 1024U * 1024U) /
+				spi->DevOnBus->SectorSize;
+		}
+		else
+		{
+			err_log("SFDP flash has no usable 4-byte instructions\r\n");
+			return SFDP_UNUSABLE;
+		}
+	}
+	spi->DevOnBus->BlockCount = spi->DevOnBus->SectorCount *
+		spi->DevOnBus->SectorSize / spi->DevOnBus->BlockSize;
+	spi->DevOnBus->PageCount = (spi->DevOnBus->SectorCount *
+		spi->DevOnBus->SectorSize) / spi->DevOnBus->PageSize;
+	return SFDP_CONFIGURED;
+}
+
+static bool FLASH_ConfigureFallback(SpiBus_t *spi)
+{
+	switch (spi->DevOnBus->JEDECID & 0x000000FF)
+	{
+	case 0x20: spi->DevOnBus->ID = W25Q512; spi->DevOnBus->BlockCount = 1024; break;
+	case 0x19: spi->DevOnBus->ID = W25Q256; spi->DevOnBus->BlockCount = 512; break;
+	case 0x18: spi->DevOnBus->ID = W25Q128; spi->DevOnBus->BlockCount = 256; break;
+	case 0x17: spi->DevOnBus->ID = W25Q64; spi->DevOnBus->BlockCount = 128; break;
+	case 0x16: spi->DevOnBus->ID = W25Q32; spi->DevOnBus->BlockCount = 64; break;
+	case 0x15: spi->DevOnBus->ID = W25Q16; spi->DevOnBus->BlockCount = 32; break;
+	case 0x14: spi->DevOnBus->ID = W25Q80; spi->DevOnBus->BlockCount = 16; break;
+	case 0x13: spi->DevOnBus->ID = W25Q40; spi->DevOnBus->BlockCount = 8; break;
+	case 0x12: spi->DevOnBus->ID = W25Q20; spi->DevOnBus->BlockCount = 4; break;
+	case 0x11: spi->DevOnBus->ID = W25Q10; spi->DevOnBus->BlockCount = 2; break;
+	default: return false;
+	}
+	spi->DevOnBus->AddrBytes = 3;
+	spi->DevOnBus->SectorEraseOpcode = 0x20;
+	spi->DevOnBus->FastReadOpcode = 0x0B;
+	spi->DevOnBus->PageProgramOpcode = 0x02;
+	if(spi->DevOnBus->ID == W25Q256 || spi->DevOnBus->ID == W25Q512)
+	{
+		spi->DevOnBus->AddrBytes = 4;
+		spi->DevOnBus->SectorEraseOpcode = 0x21;
+		spi->DevOnBus->FastReadOpcode = 0x0C;
+		spi->DevOnBus->PageProgramOpcode = 0x12;
+	}
+	spi->DevOnBus->PageSize = FLASH_PAGE_SIZE;
+	spi->DevOnBus->SectorSize = 0x1000;
+	spi->DevOnBus->SectorCount = spi->DevOnBus->BlockCount * 16;
+	spi->DevOnBus->PageCount = (spi->DevOnBus->SectorCount * spi->DevOnBus->SectorSize) /
+		spi->DevOnBus->PageSize;
+	spi->DevOnBus->BlockSize = spi->DevOnBus->SectorSize * 16;
+	return true;
 }
 
 bool Searching_ForDevice(SpiBus_t *spi)
@@ -56,80 +297,11 @@ bool Searching_ForDevice(SpiBus_t *spi)
 		return false;
 	spi->DevOnBus->JEDECID = (rd_buff[0] << 16) | (rd_buff[1] << 8) | rd_buff[2]; //JEDEC ID
 	
-	switch (spi->DevOnBus->JEDECID & 0x000000FF)
-	{
-	case 0x20: // 	w25q512
-		spi->DevOnBus->ID = W25Q512;
-		spi->DevOnBus->BlockCount = 1024;
-		debug_info("w25qxx Chip: w25q512\r\n");
-		break;
-	case 0x19: // 	w25q256
-		spi->DevOnBus->ID = W25Q256;
-		spi->DevOnBus->BlockCount = 512;
-		debug_info("w25qxx Chip: w25q256\r\n");
-		break;
-	case 0x18: // 	w25q128
-		spi->DevOnBus->ID = W25Q128;
-		spi->DevOnBus->BlockCount = 256;
-		debug_info("w25qxx Chip: w25q128\r\n");
-		break;
-	case 0x17: //	w25q64
-		spi->DevOnBus->ID = W25Q64;
-		spi->DevOnBus->BlockCount = 128;
-		debug_info("w25qxx Chip: w25q64\r\n");
-		break;
-	case 0x16: //	w25q32
-		spi->DevOnBus->ID = W25Q32;
-		spi->DevOnBus->BlockCount = 64;
-		debug_info("w25qxx Chip: w25q32\r\n");
-		break;
-	case 0x15: //	w25q16
-		spi->DevOnBus->ID = W25Q16;
-		spi->DevOnBus->BlockCount = 32;
-		debug_info("w25qxx Chip: w25q16\r\n");
-		break;
-	case 0x14: //	w25q80
-		spi->DevOnBus->ID = W25Q80;
-		spi->DevOnBus->BlockCount = 16;
-		debug_info("w25qxx Chip: w25q80\r\n");
-		break;
-	case 0x13: //	w25q40
-		spi->DevOnBus->ID = W25Q40;
-		spi->DevOnBus->BlockCount = 8;
-		debug_info("w25qxx Chip: w25q40\r\n");
-		break;
-	case 0x12: //	w25q20
-		spi->DevOnBus->ID = W25Q20;
-		spi->DevOnBus->BlockCount = 4;
-		debug_info("w25qxx Chip: w25q20\r\n");
-		break;
-	case 0x11: //	w25q10
-		spi->DevOnBus->ID = W25Q10;
-		spi->DevOnBus->BlockCount = 2;
-		debug_info("w25qxx Chip: w25q10\r\n");
-		break;
-	default:
-		spi->DevOnBus->ID = UnkownFlash;
-		debug_info("w25qxx Unknown ID\r\n");
+	SfdpResult_t sfdp = SFDP_Configure(spi);
+	if(sfdp == SFDP_UNUSABLE || sfdp == SFDP_IO_ERROR)
 		return false;
-	}
-	spi->DevOnBus->AddrBytes = 3;
-	spi->DevOnBus->SectorEraseOpcode = 0x20;
-	spi->DevOnBus->FastReadOpcode = 0x0B;
-	spi->DevOnBus->PageProgramOpcode = 0x02;
-	if(spi->DevOnBus->ID >= W25Q256)
-	{
-		spi->DevOnBus->AddrBytes = 4;
-		spi->DevOnBus->SectorEraseOpcode = 0x21;
-		spi->DevOnBus->FastReadOpcode = 0x0C;
-		spi->DevOnBus->PageProgramOpcode = 0x12;
-	}
-
-	spi->DevOnBus->PageSize = FLASH_PAGE_SIZE;
-	spi->DevOnBus->SectorSize = 0x1000;
-	spi->DevOnBus->SectorCount = spi->DevOnBus->BlockCount * 16;
-	spi->DevOnBus->PageCount = (spi->DevOnBus->SectorCount * spi->DevOnBus->SectorSize) / spi->DevOnBus->PageSize;
-	spi->DevOnBus->BlockSize = spi->DevOnBus->SectorSize * 16;
+	if(sfdp == SFDP_NOT_FOUND && !FLASH_ConfigureFallback(spi))
+		return false;
 	
 	debug_info("Flash Page Size: %d Bytes\r\n", spi->DevOnBus->PageSize);
 	debug_info("Flash Page Count: %u\r\n", spi->DevOnBus->PageCount);

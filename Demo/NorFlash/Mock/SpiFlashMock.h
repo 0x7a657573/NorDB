@@ -26,11 +26,14 @@ typedef struct
 	uint32_t Programs;
 	uint32_t Erases;
 	uint32_t Violations;
+	uint32_t SfdpTransfers;
+	uint32_t FailSfdpTransfer;
 	bool ViolationPrinted;
 } SpiFlashMock;
 
 bool SpiFlashMock_Init(SpiFlashMock *mock, const SpiFlashMockProfile *profile);
 void SpiFlashMock_Deinit(SpiFlashMock *mock);
+void SpiFlashMock_FailSfdpTransfer(SpiFlashMock *mock, uint32_t transfer);
 bool SpiFlashMock_WriteRead(void *param, uint8_t *out, uint16_t wlen,
 	uint8_t *in, uint16_t rlen);
 

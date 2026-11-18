@@ -107,6 +107,12 @@ void SpiFlashMock_Deinit(SpiFlashMock *mock)
 	mock->Memory = NULL;
 }
 
+void SpiFlashMock_FailSfdpTransfer(SpiFlashMock *mock, uint32_t transfer)
+{
+	if(mock)
+		mock->FailSfdpTransfer = transfer;
+}
+
 bool SpiFlashMock_WriteRead(void *param, uint8_t *out, uint16_t wlen,
 	uint8_t *in, uint16_t rlen)
 {
@@ -249,6 +255,9 @@ command_length_ok:
 	}
 	if(class == COMMAND_SFDP)
 	{
+		mock->SfdpTransfers++;
+		if(mock->SfdpTransfers == mock->FailSfdpTransfer)
+			return false;
 		if(!in && rlen)
 			return false;
 		for(uint16_t i = 0; i < rlen; i++)

@@ -32,6 +32,7 @@
 typedef enum
 {
 	UnkownFlash = 1,
+	SfdpFlash,
 	W25Q10,
 	W25Q20,
 	W25Q40,
