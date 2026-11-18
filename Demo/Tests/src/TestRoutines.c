@@ -47,25 +47,25 @@ bool FullFill_Test(NorDB_t *DB, char *name, int count)
 	uint32_t Record_Sector = DB->Record_NumberInSector;
 	uint32_t Total_Capacity = Record_Sector * Sector_Number;
 
-	uint32_t Used_Record = NorDB_Get_TotalUnreadRecord(DB);
 	printf("--->NorDB Full Fill Test\n");
 
-	if(Used_Record)
+	if(!NorDB_Format(DB->DB_ll))
 	{
-		
-		printf("\tHave %d record try empty DB\n",Used_Record);
-		uint32_t add_record = Total_Capacity - Used_Record;
-		for(int i=0;i<add_record;i++)
-		{
-			/*get random record*/
-			get_RandomRecord(&temp);
-			NorDB_AddRecord(DB, &temp);
-		}
+		printf("\tError: NorDB_Format failed\n");
+		return false;
+	}
 
-		for(int i=0;i<Total_Capacity;i++)
-		{
-			NorDB_ReadRecord(DB, &temp);
-		}
+	if(NorDB_Get_TotalUnreadRecord(DB) != 0)
+	{
+		printf("\tError: DB not empty after format (%u)\n",NorDB_Get_TotalUnreadRecord(DB));
+		return false;
+	}
+
+	if(NorDB_Get_FreeRecord(DB) != Total_Capacity)
+	{
+		printf("\tError: expected %u free records after format, got %u\n",
+			Total_Capacity, NorDB_Get_FreeRecord(DB));
+		return false;
 	}
 
 	/*try fill DB*/
