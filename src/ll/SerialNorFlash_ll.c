@@ -236,27 +236,56 @@ static SfdpResult_t SFDP_Configure(SpiBus_t *spi)
 	return SFDP_CONFIGURED;
 }
 
+typedef struct
+{
+	uint32_t JEDECID;
+	uint16_t BlockCount;
+	bool Dedicated4ByteOpcodes;
+} FlashFallback_t;
+
+static const FlashFallback_t flash_fallbacks[] = {
+	{0xEF4011, 2, false}, /* W25Q10 */
+	{0xEF4012, 4, false}, /* W25Q20 */
+	{0xEF4013, 8, false}, /* W25Q40 */
+	{0xEF4014, 16, false}, /* W25Q80 */
+	{0xEF4015, 32, false}, /* W25Q16 */
+	{0xEF4016, 64, false}, /* W25Q32 */
+	{0xEF4017, 128, false}, /* W25Q64 */
+	{0xEF4018, 256, false}, /* W25Q128 */
+	{0xEF4019, 512, true}, /* W25Q256 */
+	{0xEF4020, 1024, true}, /* W25Q512 */
+	{0xEF3011, 2, false}, /* W25X10 */
+	{0xEF3012, 4, false}, /* W25X20 */
+	{0xEF3013, 8, false}, /* W25X40 */
+	{0xEF3014, 16, false}, /* W25X80 */
+	{0xEF3015, 32, false}, /* W25X16 */
+	{0xEF3016, 64, false}, /* W25X32 */
+	{0xEF3017, 128, false}, /* W25X64 */
+};
+
 static bool FLASH_ConfigureFallback(SpiBus_t *spi)
 {
-	switch (spi->DevOnBus->JEDECID & 0x000000FF)
+	const FlashFallback_t *fallback = NULL;
+	for(uint32_t i = 0; i < sizeof(flash_fallbacks) / sizeof(flash_fallbacks[0]); i++)
 	{
-	case 0x20: spi->DevOnBus->ID = W25Q512; spi->DevOnBus->BlockCount = 1024; break;
-	case 0x19: spi->DevOnBus->ID = W25Q256; spi->DevOnBus->BlockCount = 512; break;
-	case 0x18: spi->DevOnBus->ID = W25Q128; spi->DevOnBus->BlockCount = 256; break;
-	case 0x17: spi->DevOnBus->ID = W25Q64; spi->DevOnBus->BlockCount = 128; break;
-	case 0x16: spi->DevOnBus->ID = W25Q32; spi->DevOnBus->BlockCount = 64; break;
-	case 0x15: spi->DevOnBus->ID = W25Q16; spi->DevOnBus->BlockCount = 32; break;
-	case 0x14: spi->DevOnBus->ID = W25Q80; spi->DevOnBus->BlockCount = 16; break;
-	case 0x13: spi->DevOnBus->ID = W25Q40; spi->DevOnBus->BlockCount = 8; break;
-	case 0x12: spi->DevOnBus->ID = W25Q20; spi->DevOnBus->BlockCount = 4; break;
-	case 0x11: spi->DevOnBus->ID = W25Q10; spi->DevOnBus->BlockCount = 2; break;
-	default: return false;
+		if(flash_fallbacks[i].JEDECID == spi->DevOnBus->JEDECID)
+		{
+			fallback = &flash_fallbacks[i];
+			break;
+		}
 	}
+	if(!fallback)
+	{
+		err_log("unknown flash JEDEC ID %06x without SFDP\r\n", spi->DevOnBus->JEDECID);
+		return false;
+	}
+	spi->DevOnBus->ID = TableFlash;
+	spi->DevOnBus->BlockCount = fallback->BlockCount;
 	spi->DevOnBus->AddrBytes = 3;
 	spi->DevOnBus->SectorEraseOpcode = 0x20;
 	spi->DevOnBus->FastReadOpcode = 0x0B;
 	spi->DevOnBus->PageProgramOpcode = 0x02;
-	if(spi->DevOnBus->ID == W25Q256 || spi->DevOnBus->ID == W25Q512)
+	if(fallback->Dedicated4ByteOpcodes)
 	{
 		spi->DevOnBus->AddrBytes = 4;
 		spi->DevOnBus->SectorEraseOpcode = 0x21;

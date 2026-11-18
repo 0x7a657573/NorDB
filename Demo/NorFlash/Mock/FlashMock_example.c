@@ -189,6 +189,12 @@ int main(void)
 	static const SpiFlashMockProfile known_fallback = {
 		{0xEF, 0x40, 0x17}, 8U * 1024U * 1024U, 0, false, 256, NULL, 0
 	};
+	static const SpiFlashMockProfile w25x64 = {
+		{0xEF, 0x30, 0x17}, 8U * 1024U * 1024U, 0, false, 256, NULL, 0
+	};
+	static const SpiFlashMockProfile unknown_no_sfdp = {
+		{0xC8, 0x40, 0x17}, 8U * 1024U * 1024U, 0, false, 256, NULL, 0
+	};
 	static const SpiFlashMockProfile gigadevice = {
 		{0xC8, 0x40, 0x17}, 8U * 1024U * 1024U, 0, false, 256,
 		w25q64_sfdp, sizeof(w25q64_sfdp)
@@ -269,7 +275,18 @@ int main(void)
 	else
 		return EXIT_FAILURE;
 	if(RunProfile("known fallback", &known_fallback, 0) != EXIT_SUCCESS ||
+		RunProfile("W25X64 fallback", &w25x64, 0) != EXIT_SUCCESS ||
 		RunProfile("GigaDevice SFDP", &gigadevice, 0) != EXIT_SUCCESS)
+		return EXIT_FAILURE;
+	if(SpiFlashMock_Init(&mock, &unknown_no_sfdp))
+	{
+		bus = (SpiBus_t){.param = &mock, .SPI_WriteRead = SpiFlashMock_WriteRead};
+		flash = FlashDB_Init(0, 1, &bus);
+		if(flash)
+			return EXIT_FAILURE;
+		SpiFlashMock_Deinit(&mock);
+	}
+	else
 		return EXIT_FAILURE;
 	return EXIT_SUCCESS;
 }

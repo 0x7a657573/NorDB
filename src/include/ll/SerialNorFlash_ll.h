@@ -33,16 +33,7 @@ typedef enum
 {
 	UnkownFlash = 1,
 	SfdpFlash,
-	W25Q10,
-	W25Q20,
-	W25Q40,
-	W25Q80,
-	W25Q16,
-	W25Q32,
-	W25Q64,
-	W25Q128,
-	W25Q256,
-	W25Q512,
+	TableFlash,
 } FType_t;
 
 typedef struct 

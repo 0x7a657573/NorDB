@@ -225,7 +225,7 @@ The public API is defined in `src/include/NorDB.h`.
 
 The flash backend is implemented in `src/ll/SerialNorFlash_ll.c`. It uses an SPI interface to communicate with serial NOR flash chips.
 
-The backend detects geometry and opcodes from the JEDEC JESD216 SFDP tables. A uniform 4 KB erase type is required; chips larger than 16 MB use dedicated 4-byte instructions when SFDP provides them, otherwise only the first 16 MB is used. Chips without SFDP fall back to the known Winbond capacity codes.
+The backend detects geometry and opcodes from the JEDEC JESD216 SFDP tables. A uniform 4 KB erase type is required; chips larger than 16 MB use dedicated 4-byte instructions when SFDP provides them, otherwise only the first 16 MB is used. Without SFDP, only the exact JEDEC IDs of the known Winbond W25Q and W25X parts are supported; other chips must provide SFDP.
 
 The flash backend assumes the following flash geometry:
 
