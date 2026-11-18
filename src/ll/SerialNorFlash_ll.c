@@ -18,7 +18,7 @@
 
 #include "ll/SerialNorFlash_ll.h"
 
-#define debug_info 	//printf
+#define debug_info debug_log
 
 #define FLASH_PAGE_SIZE	256
 
@@ -94,11 +94,11 @@ bool Searching_ForDevice(SpiBus_t *spi)
 	spi->DevOnBus->BlockSize = spi->DevOnBus->SectorSize * 16;
 	
 	debug_info("Flash Page Size: %d Bytes\r\n", spi->DevOnBus->PageSize);
-	debug_info("Flash Page Count: %d\r\n", spi->DevOnBus->PageCount);
-	debug_info("Flash Sector Size: %d Bytes\r\n", spi->DevOnBus->SectorSize);
-	debug_info("Flash Sector Count: %d\r\n", spi->DevOnBus->SectorCount);
-	debug_info("Flash Block Size: %d Bytes\r\n", spi->DevOnBus->BlockSize);
-	debug_info("Flash Block Count: %d\r\n", spi->DevOnBus->BlockCount);
+	debug_info("Flash Page Count: %u\r\n", spi->DevOnBus->PageCount);
+	debug_info("Flash Sector Size: %u Bytes\r\n", spi->DevOnBus->SectorSize);
+	debug_info("Flash Sector Count: %u\r\n", spi->DevOnBus->SectorCount);
+	debug_info("Flash Block Size: %u Bytes\r\n", spi->DevOnBus->BlockSize);
+	debug_info("Flash Block Count: %u\r\n", spi->DevOnBus->BlockCount);
 	debug_info("Flash Init Done\r\n");
 	return true;
 }
@@ -143,7 +143,7 @@ bool FLASH_EraseSector(void *Param,uint32_t SectorAddr)
 	NorDB_sem_Lock(&spi->xSemaphore);
 	/*add Sector Offset*/
 	SectorAddr += FL->StartOffset;
-	debug_info("w25qxx EraseSector %d Begin...\r\n", SectorAddr);
+	debug_info("w25qxx EraseSector %u Begin...\r\n", SectorAddr);
 	
 	if(!FLASH_WaitForWriteEnd(Param))
 	{
@@ -187,7 +187,7 @@ bool FLASH_ReadBuffer(void*Param, uint32_t ReadAddr, uint8_t *pBuffer,  uint16_t
 	/*add Sector Offset*/
 	ReadAddr += FL->StartOffset;
 
-	debug_info("w25qxx ReadBytes at Address:%d, %d Bytes\r\n", ReadAddr, NumByteToRead);
+	debug_info("w25qxx ReadBytes at Address:%u, %u Bytes\r\n", ReadAddr, NumByteToRead);
 
 	uint32_t Index = 0;
 	uint8_t  cmd[8] = {0};
@@ -258,7 +258,7 @@ bool FLASH_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 	/*add Sector Offset*/
 	address += FL->StartOffset;
 
-	debug_info("w25qxx Write at Address:%d, %d Bytes\r\n", address, len);
+	debug_info("w25qxx Write at Address:%u, %u Bytes\r\n", address, len);
 
     uint32_t start_page_offset = address % page_size;
     uint32_t start_page = address / page_size;
@@ -271,21 +271,21 @@ bool FLASH_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 	bool ok = true;
     if(start_page_wbyte)
     {
-        debug_info("Write %i Byte in page %i from adr %i\r\n",start_page_wbyte, start_page,start_page_offset);
+        debug_info("Write %u Byte in page %u from adr %u\r\n",start_page_wbyte, start_page,start_page_offset);
 		ok = FLASH_WritePage(Param,start_page * page_size + start_page_offset,dptr, start_page_wbyte);
 		dptr+=start_page_wbyte;
     }
     
     for(int i=0;ok && i<complete_page;i++)
     {
-        debug_info("Write page(255 byte) in page %i\r\n",start_page+1+i);
+        debug_info("Write page(255 byte) in page %u\r\n",start_page+1+i);
 		ok = FLASH_WritePage(Param,(start_page+1+i) * page_size ,dptr, page_size);
 		dptr+=page_size;
     }
     
     if(ok && Offset_end_Page)
     {
-        debug_info("Write %i Byte in page %i\r\n",Offset_end_Page,start_page+1+complete_page);
+        debug_info("Write %u Byte in page %u\r\n",Offset_end_Page,start_page+1+complete_page);
 		ok = FLASH_WritePage(Param,(start_page+1+complete_page) * page_size ,dptr, Offset_end_Page);
     }
 
