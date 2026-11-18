@@ -22,6 +22,15 @@
 
 #define FLASH_PAGE_SIZE	256
 
+static inline uint32_t FLASH_WriteCommand(uint8_t *cmd,uint8_t opcode,uint8_t addrbytes,uint32_t address)
+{
+	uint32_t i = 0;
+	cmd[i++] = opcode;
+	for(uint8_t n = addrbytes; n > 0; n--)
+		cmd[i++] = (address >> ((n - 1) * 8));
+	return i;
+}
+
 bool Searching_ForDevice(SpiBus_t *spi)
 {
 	uint8_t status = 0;
@@ -104,6 +113,17 @@ bool Searching_ForDevice(SpiBus_t *spi)
 		debug_info("w25qxx Unknown ID\r\n");
 		return false;
 	}
+	spi->DevOnBus->AddrBytes = 3;
+	spi->DevOnBus->SectorEraseOpcode = 0x20;
+	spi->DevOnBus->FastReadOpcode = 0x0B;
+	spi->DevOnBus->PageProgramOpcode = 0x02;
+	if(spi->DevOnBus->ID >= W25Q256)
+	{
+		spi->DevOnBus->AddrBytes = 4;
+		spi->DevOnBus->SectorEraseOpcode = 0x21;
+		spi->DevOnBus->FastReadOpcode = 0x0C;
+		spi->DevOnBus->PageProgramOpcode = 0x12;
+	}
 
 	spi->DevOnBus->PageSize = FLASH_PAGE_SIZE;
 	spi->DevOnBus->SectorSize = 0x1000;
@@ -181,20 +201,7 @@ bool FLASH_EraseSector(void *Param,uint32_t SectorAddr)
 	}
 
 	uint8_t  cmd[8] = {0};
-	uint32_t i = 0;
-	
-	if (spi->DevOnBus->ID >= W25Q256)
-	{
-		cmd[i++] = (0x21);
-		cmd[i++] = ((SectorAddr & 0xFF000000) >> 24);
-	}
-	else
-	{
-		cmd[i++] = (0x20);
-	}
-	cmd[i++] = ((SectorAddr & 0xFF0000) >> 16);
-	cmd[i++] = ((SectorAddr & 0xFF00) >> 8);
-	cmd[i++] = (SectorAddr & 0xFF);
+	uint32_t i = FLASH_WriteCommand(cmd,spi->DevOnBus->SectorEraseOpcode,spi->DevOnBus->AddrBytes,SectorAddr);
 	if(!spi->SPI_WriteRead(spi->param,cmd,i,NULL,0))
 	{
 		spi->MayBeBusy = true;
@@ -233,18 +240,7 @@ bool FLASH_ReadBuffer(void*Param, uint32_t ReadAddr, uint8_t *pBuffer,  uint16_t
 
 	uint32_t Index = 0;
 	uint8_t  cmd[8] = {0};
-	if (spi->DevOnBus->ID >= W25Q256)
-	{
-		cmd[Index++] = 0x0C;
-		cmd[Index++] = ((ReadAddr & 0xFF000000) >> 24);
-	}
-	else
-	{
-		cmd[Index++] = (0x0B);
-	}
-	cmd[Index++] = ((ReadAddr & 0xFF0000) >> 16);
-	cmd[Index++] = ((ReadAddr & 0xFF00) >> 8);
-	cmd[Index++] = (ReadAddr & 0xFF);
+	Index = FLASH_WriteCommand(cmd,spi->DevOnBus->FastReadOpcode,spi->DevOnBus->AddrBytes,ReadAddr);
 	cmd[Index++] = (0);
 	bool ok = spi->SPI_WriteRead(spi->param,cmd,Index,pBuffer,NumByteToRead);
 	NorDB_sem_Unlock(&spi->xSemaphore);
@@ -271,20 +267,7 @@ static inline bool FLASH_WritePage(void*Param,uint32_t address,uint8_t *data,uin
 	
 	/*opcode + 32bit address + page data*/
 	uint8_t cmd[1 + 4 + FLASH_PAGE_SIZE];
-	uint32_t i = 0;
-
-	if (spi->DevOnBus->ID >= W25Q256)
-	{
-		cmd[i++] = (0x12);
-		cmd[i++] = ((address & 0xFF000000) >> 24);
-	}
-	else
-	{
-		cmd[i++] = (0x02);
-	}
-	cmd[i++] = ((address & 0xFF0000) >> 16);
-	cmd[i++] = ((address & 0xFF00) >> 8);
-	cmd[i++] = (address & 0xFF);
+	uint32_t i = FLASH_WriteCommand(cmd,spi->DevOnBus->PageProgramOpcode,spi->DevOnBus->AddrBytes,address);
 
 	for(int j=0;j<len;j++)
 		cmd[i++] = data[j];

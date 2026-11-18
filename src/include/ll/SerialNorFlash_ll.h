@@ -48,6 +48,10 @@ typedef struct
 {
 	uint32_t 	JEDECID;
 	FType_t		ID;
+	uint8_t		AddrBytes;		/*address bytes*/
+	uint8_t		SectorEraseOpcode;	/*4 KB erase*/
+	uint8_t		FastReadOpcode;
+	uint8_t		PageProgramOpcode;
 	uint32_t 	BlockCount;
 	uint16_t 	PageSize;
 	uint32_t 	PageCount;
