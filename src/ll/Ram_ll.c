@@ -27,7 +27,9 @@ bool RAMll_WriteBuffer(void*Param,uint32_t address,uint8_t *data,uint16_t len)
 
 	if((address <= ptr->Total_Size) && (len <= ptr->Total_Size - address))
 	{
-		nordb_memcpy(&ptr->Buffer[address],data,len);
+		/*programming only clears bits, like NOR flash*/
+		for(uint16_t i=0;i<len;i++)
+			ptr->Buffer[address+i] &= data[i];
 		//printf("wRAM (%d)->%d\n",address,len);
 		return true;
 	}
